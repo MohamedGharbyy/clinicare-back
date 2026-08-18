@@ -18,9 +18,11 @@ import jakarta.validation.Validator;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -61,6 +63,58 @@ public class AppointmentService {
         this.doctorProfileRepository = doctorProfileRepository;
         this.validator = validator;
     }
+/** Returns the current date/time in the application's JVM timezone. */
+    private LocalDateTime nowInZone() {
+        return LocalDateTime.now(ZoneId.systemDefault());
+    }
+
+    /**
+     * Background task that runs periodically to transition appointments
+     * whose scheduled date/time has passed.
+     * <p>
+     * PENDING appointments become REJECTED.
+     * CONFIRMED appointments become COMPLETED.
+     * This ensures the pending-request count stays accurate without
+     * requiring the frontend to be open.
+     */
+    @Scheduled(fixedRate = 60_000) // run every 60 seconds
+    @Transactional
+    public void transitionPastAppointments() {
+        LocalDateTime now = nowInZone();
+
+        // Find all PENDING appointments whose scheduled date/time is in the past
+        List<Appointment> pendingPast = appointmentRepository.findAll().stream()
+                .filter(a -> a.getStatus() == AppointmentStatus.PENDING)
+                .filter(a -> {
+                    LocalDateTime appointmentDateTime =
+                            LocalDateTime.of(a.getAppointmentDate(), a.getAppointmentTime());
+                    return appointmentDateTime.isBefore(now);
+                })
+                .toList();
+
+        // Transition each past-due PENDING appointment to REJECTED
+        for (Appointment a : pendingPast) {
+            a.setStatus(AppointmentStatus.REJECTED);
+            appointmentRepository.save(a);
+        }
+
+        // Find all CONFIRMED appointments that were accepted but whose time has passed
+        List<Appointment> confirmedPast = appointmentRepository.findAll().stream()
+                .filter(a -> a.getStatus() == AppointmentStatus.CONFIRMED)
+                .filter(a -> {
+                    LocalDateTime appointmentDateTime =
+                            LocalDateTime.of(a.getAppointmentDate(), a.getAppointmentTime());
+                    return appointmentDateTime.isBefore(now);
+                })
+                .toList();
+
+        for (Appointment a : confirmedPast) {
+            a.setStatus(AppointmentStatus.COMPLETED);
+            appointmentRepository.save(a);
+        }
+    }
+
+    /** Creates a new appointment request for the authenticated patient. */
 
     /**
      * Creates a new appointment request for the authenticated patient.
