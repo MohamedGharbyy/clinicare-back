@@ -179,6 +179,58 @@ public class AppointmentService {
     }
 
     /**
+     * Accepts a pending appointment request assigned to the authenticated doctor.
+     * <p>
+     * Only the owning doctor may accept, and only while the request is still
+     * {@link AppointmentStatus#PENDING}. The appointment is then marked
+     * {@link AppointmentStatus#CONFIRMED} — the system's accepted state — and the
+     * updated representation is returned.
+     *
+     * @param appointmentId the id of the appointment to accept
+     * @return the accepted appointment with HTTP 200 OK
+     */
+    @Transactional
+    public AppointmentResponseDTO acceptAppointment(Long appointmentId) {
+        Appointment appointment = requireOwnPendingAppointment(appointmentId);
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+        Appointment saved = appointmentRepository.save(appointment);
+        return toResponse(saved);
+    }
+
+    /**
+     * Rejects a pending appointment request assigned to the authenticated doctor.
+     * <p>
+     * Only the owning doctor may reject, and only while the request is still
+     * {@link AppointmentStatus#PENDING}. The appointment is then marked
+     * {@link AppointmentStatus#REJECTED} and the updated representation is returned.
+     *
+     * @param appointmentId the id of the appointment to reject
+     * @return the rejected appointment with HTTP 200 OK
+     */
+    @Transactional
+    public AppointmentResponseDTO rejectAppointment(Long appointmentId) {
+        Appointment appointment = requireOwnPendingAppointment(appointmentId);
+        appointment.setStatus(AppointmentStatus.REJECTED);
+        Appointment saved = appointmentRepository.save(appointment);
+        return toResponse(saved);
+    }
+
+    /** Resolves a PENDING appointment assigned to the authenticated doctor. */
+    private Appointment requireOwnPendingAppointment(Long appointmentId) {
+        DoctorProfile doctor = requireCurrentDoctor();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new BadRequestException("Appointment not found"));
+        if (!appointment.getDoctor().getId().equals(doctor.getId())) {
+            throw new BadRequestException("You can only manage your own appointments");
+        }
+        if (appointment.getStatus() != AppointmentStatus.PENDING) {
+            throw new BadRequestException(
+                    "This appointment cannot be updated in its current status: " + appointment.getStatus());
+        }
+        return appointment;
+    }
+
+    /**
      * Returns upcoming appointments for the authenticated patient, those whose
      * scheduled date/time is strictly in the future, ordered chronologically.
      */

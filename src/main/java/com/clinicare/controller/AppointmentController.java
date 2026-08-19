@@ -109,4 +109,38 @@ public class AppointmentController {
         List<AppointmentResponseDTO> appointments = appointmentService.getDoctorAppointments();
         return ResponseEntity.ok(appointments);
     }
+
+    /**
+     * Accepts one of the authenticated doctor's pending appointment requests.
+     * <p>
+     * Only the owning doctor may accept, and only while the request is still
+     * {@code PENDING}. The appointment is then marked {@code CONFIRMED} (the
+     * system's accepted state) and the updated representation is returned.
+     *
+     * @param appointmentId the id of the appointment to accept
+     * @return the accepted appointment with HTTP 200 OK
+     */
+    @PostMapping("/doctor/appointments/{id}/accept")
+    public ResponseEntity<AppointmentResponseDTO> acceptAppointment(
+            @PathVariable("id") Long appointmentId) {
+        AppointmentResponseDTO response = appointmentService.acceptAppointment(appointmentId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Rejects one of the authenticated doctor's pending appointment requests.
+     * <p>
+     * Only the owning doctor may reject, and only while the request is still
+     * {@code PENDING}. The appointment is then marked {@code REJECTED} and the
+     * updated representation is returned.
+     *
+     * @param appointmentId the id of the appointment to reject
+     * @return the rejected appointment with HTTP 200 OK
+     */
+    @PostMapping("/doctor/appointments/{id}/reject")
+    public ResponseEntity<AppointmentResponseDTO> rejectAppointment(
+            @PathVariable("id") Long appointmentId) {
+        AppointmentResponseDTO response = appointmentService.rejectAppointment(appointmentId);
+        return ResponseEntity.ok(response);
+    }
 }
