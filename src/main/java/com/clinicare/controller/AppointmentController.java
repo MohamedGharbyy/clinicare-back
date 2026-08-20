@@ -2,7 +2,9 @@ package com.clinicare.controller;
 
 import com.clinicare.dto.AppointmentRequestDTO;
 import com.clinicare.dto.AppointmentResponseDTO;
+import com.clinicare.dto.DoctorPatientResponseDTO;
 import com.clinicare.service.AppointmentService;
+import com.clinicare.service.DoctorService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,9 +36,11 @@ import java.util.List;
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
+    private final DoctorService doctorService;
 
-    public AppointmentController(AppointmentService appointmentService) {
+    public AppointmentController(AppointmentService appointmentService, DoctorService doctorService) {
         this.appointmentService = appointmentService;
+        this.doctorService = doctorService;
     }
 
     /**
@@ -96,6 +100,19 @@ public class AppointmentController {
             @PathVariable("id") Long appointmentId) {
         AppointmentResponseDTO response = appointmentService.cancelAppointment(appointmentId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Returns all patients the authenticated doctor has an established
+     * appointment relationship with (CONFIRMED or COMPLETED), ordered
+     * by name.
+     *
+     * @return list of the doctor's patients (empty if none exist)
+     */
+    @GetMapping("/doctor/patients")
+    public ResponseEntity<List<DoctorPatientResponseDTO>> getMyPatients() {
+        List<DoctorPatientResponseDTO> patients = doctorService.getMyPatients();
+        return ResponseEntity.ok(patients);
     }
 
     /**

@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Read-only lookup of the doctors offered to patients in the booking form.
@@ -61,10 +60,9 @@ public class DoctorService {
     @Transactional(readOnly = true)
     public List<DoctorPatientResponseDTO> getMyPatients() {
         DoctorProfile doctor = requireCurrentDoctor();
-        Set<AppointmentStatus> relationshipStatuses =
-                Set.of(AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED);
-        return appointmentRepository.findByDoctor(doctor).stream()
-                .filter(a -> relationshipStatuses.contains(a.getStatus()))
+        List<AppointmentStatus> relationshipStatuses =
+                List.of(AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED);
+        return appointmentRepository.findByDoctorWithPatients(doctor, relationshipStatuses).stream()
                 .map(Appointment::getPatient)
                 .distinct()
                 .map(p -> new DoctorPatientResponseDTO(
