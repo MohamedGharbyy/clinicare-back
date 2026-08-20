@@ -3,6 +3,7 @@ package com.clinicare.service;
 import com.clinicare.dto.PrescriptionMedicationResponseDTO;
 import com.clinicare.dto.PrescriptionRequestDTO;
 import com.clinicare.dto.PrescriptionResponseDTO;
+import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
 import com.clinicare.entity.PatientProfile;
 import com.clinicare.entity.Prescription;
@@ -40,6 +41,9 @@ public class PrescriptionService {
 
     private static final Comparator<Prescription> BY_CREATION_DATE = Comparator
             .comparing(Prescription::getCreationDate);
+
+    private static final java.util.Set<AppointmentStatus> RELATIONSHIP_STATUSES =
+            java.util.Set.of(AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED);
 
     private final PrescriptionRepository prescriptionRepository;
     private final PrescriptionMedicationRepository prescriptionMedicationRepository;
@@ -82,7 +86,7 @@ public class PrescriptionService {
         PatientProfile patient = patientProfileRepository.findById(request.patientId())
                 .orElseThrow(() -> new BadRequestException("Patient not found"));
 
-        if (!appointmentRepository.existsByPatientAndDoctor(patient, doctor)) {
+        if (!appointmentRepository.existsByPatientAndDoctorAndStatusIn(patient, doctor, RELATIONSHIP_STATUSES)) {
             throw new BadRequestException(
                     "You can only prescribe for patients with whom you have an existing appointment relationship");
         }
@@ -139,7 +143,7 @@ public class PrescriptionService {
         PatientProfile patient = patientProfileRepository.findById(patientId)
                 .orElseThrow(() -> new BadRequestException("Patient not found"));
 
-        if (!appointmentRepository.existsByPatientAndDoctor(patient, doctor)) {
+        if (!appointmentRepository.existsByPatientAndDoctorAndStatusIn(patient, doctor, RELATIONSHIP_STATUSES)) {
             throw new BadRequestException(
                     "You can only view prescriptions for patients with whom you have an existing appointment relationship");
         }
