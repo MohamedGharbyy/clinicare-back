@@ -4,6 +4,7 @@ import com.clinicare.dto.AdminDashboardResponseDTO;
 import com.clinicare.dto.AdminDoctorResponseDTO;
 import com.clinicare.dto.AdminPatientResponseDTO;
 import com.clinicare.dto.AppointmentResponseDTO;
+import com.clinicare.dto.PrescriptionResponseDTO;
 import com.clinicare.service.AdminService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -55,6 +56,12 @@ public class AdminController {
     @GetMapping("/appointments")
     public ResponseEntity<List<AppointmentResponseDTO>> listAppointments() {
         return ResponseEntity.ok(adminService.listAppointments());
+    }
+
+    /** Returns every prescription across the platform, ordered by creation date. */
+    @GetMapping("/prescriptions")
+    public ResponseEntity<List<PrescriptionResponseDTO>> listPrescriptions() {
+        return ResponseEntity.ok(adminService.listAllPrescriptions());
     }
 
     /**

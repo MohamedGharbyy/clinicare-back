@@ -4,15 +4,19 @@ import com.clinicare.dto.AdminDashboardResponseDTO;
 import com.clinicare.dto.AdminDoctorResponseDTO;
 import com.clinicare.dto.AdminPatientResponseDTO;
 import com.clinicare.dto.AppointmentResponseDTO;
+import com.clinicare.dto.PrescriptionMedicationResponseDTO;
+import com.clinicare.dto.PrescriptionResponseDTO;
 import com.clinicare.entity.Appointment;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
 import com.clinicare.entity.PatientProfile;
+import com.clinicare.entity.Prescription;
 import com.clinicare.entity.User;
 import com.clinicare.exception.BadRequestException;
 import com.clinicare.repository.AppointmentRepository;
 import com.clinicare.repository.DoctorProfileRepository;
 import com.clinicare.repository.PatientProfileRepository;
+import com.clinicare.repository.PrescriptionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,13 +48,16 @@ public class AdminService {
     private final PatientProfileRepository patientProfileRepository;
     private final DoctorProfileRepository doctorProfileRepository;
     private final AppointmentRepository appointmentRepository;
+    private final PrescriptionRepository prescriptionRepository;
 
     public AdminService(PatientProfileRepository patientProfileRepository,
                         DoctorProfileRepository doctorProfileRepository,
-                        AppointmentRepository appointmentRepository) {
+                        AppointmentRepository appointmentRepository,
+                        PrescriptionRepository prescriptionRepository) {
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
+        this.prescriptionRepository = prescriptionRepository;
     }
 
     /** Aggregated counters for the dashboard summary cards. */
@@ -86,6 +93,15 @@ public class AdminService {
         return appointmentRepository.findAll().stream()
                 .sorted(APPOINTMENT_BY_DATE_TIME)
                 .map(AdminService::toAppointmentResponse)
+                .toList();
+    }
+
+    /** All prescriptions across the platform, ordered chronologically by creation date. */
+    @Transactional(readOnly = true)
+    public List<PrescriptionResponseDTO> listAllPrescriptions() {
+        return prescriptionRepository.findAll().stream()
+                .sorted(Comparator.comparing(Prescription::getCreationDate))
+                .map(AdminService::toPrescriptionResponse)
                 .toList();
     }
 
@@ -151,6 +167,27 @@ public class AdminService {
                 appointment.getNotes(),
                 appointment.getStatus(),
                 appointment.getCreatedAt());
+    }
+
+    private static PrescriptionResponseDTO toPrescriptionResponse(Prescription prescription) {
+        List<PrescriptionMedicationResponseDTO> medications = prescription.getMedications().stream()
+                .map(med -> new PrescriptionMedicationResponseDTO(
+                        med.getId(),
+                        med.getMedicationName(),
+                        med.getDosage(),
+                        med.getFrequency(),
+                        med.getDuration(),
+                        med.getInstructions()))
+                .toList();
+
+        return new PrescriptionResponseDTO(
+                prescription.getId(),
+                prescription.getDoctor().getId(),
+                fullName(prescription.getDoctor().getUser()),
+                prescription.getPatient().getId(),
+                fullName(prescription.getPatient().getUser()),
+                prescription.getCreationDate(),
+                medications);
     }
 
     private static String fullName(User user) {
