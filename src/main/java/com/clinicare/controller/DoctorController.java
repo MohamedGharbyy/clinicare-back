@@ -1,5 +1,6 @@
 package com.clinicare.controller;
 
+import com.clinicare.dto.DoctorPatientResponseDTO;
 import com.clinicare.dto.DoctorResponseDTO;
 import com.clinicare.service.DoctorService;
 import org.springframework.http.ResponseEntity;
@@ -29,5 +30,10 @@ public class DoctorController {
     @GetMapping
     public ResponseEntity<List<DoctorResponseDTO>> listDoctors() {
         return ResponseEntity.ok(doctorService.listDoctors());
+    }
+
+    @GetMapping("/patients")
+    public ResponseEntity<List<DoctorPatientResponseDTO>> getMyPatients() {
+        return ResponseEntity.ok(doctorService.getMyPatients());
     }
 }
