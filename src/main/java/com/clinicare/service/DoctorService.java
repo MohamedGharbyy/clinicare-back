@@ -1,7 +1,11 @@
 package com.clinicare.service;
 
+import com.clinicare.dto.ChangePasswordRequestDTO;
 import com.clinicare.dto.DoctorPatientResponseDTO;
+import com.clinicare.dto.DoctorProfileResponseDTO;
 import com.clinicare.dto.DoctorResponseDTO;
+import com.clinicare.dto.UpdateDoctorProfileRequestDTO;
+import com.clinicare.dto.UpdateDoctorProfileResponseDTO;
 import com.clinicare.entity.Appointment;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
@@ -11,8 +15,10 @@ import com.clinicare.exception.BadRequestException;
 import com.clinicare.repository.AppointmentRepository;
 import com.clinicare.repository.DoctorProfileRepository;
 import com.clinicare.repository.UserRepository;
+import com.clinicare.security.JwtService;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,11 +26,13 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Read-only lookup of the doctors offered to patients in the booking form.
+ * Doctor account management and lookups: profile read/update, password change,
+ * and the read-only list of doctors offered to patients in the booking form.
  * <p>
- * The returned {@link DoctorResponseDTO#id()} is the real {@code doctor_profiles.id}
- * so the frontend can submit it as {@code doctorId} when creating an
- * appointment. Names are assembled from each doctor's linked user account.
+ * Like the other services, the acting doctor is derived exclusively from the JWT
+ * principal — no doctor identifier is ever accepted from the client. Password
+ * hashing reuses the application's {@link PasswordEncoder}, and token issuance
+ * (when the login email changes) reuses the {@link JwtService}.
  */
 @Service
 public class DoctorService {
@@ -36,13 +44,19 @@ public class DoctorService {
     private final DoctorProfileRepository doctorProfileRepository;
     private final AppointmentRepository appointmentRepository;
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     public DoctorService(DoctorProfileRepository doctorProfileRepository,
-                         AppointmentRepository appointmentRepository,
-                         UserRepository userRepository) {
+                          AppointmentRepository appointmentRepository,
+                          UserRepository userRepository,
+                          PasswordEncoder passwordEncoder,
+                          JwtService jwtService) {
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     /** Returns all registered doctors, ordered by last name. */
@@ -55,6 +69,82 @@ public class DoctorService {
                         d.getUser().getFirstName() + " " + d.getUser().getLastName(),
                         d.getSpecialty()))
                 .toList();
+    }
+
+    /** Returns the authenticated doctor's current profile. */
+    @Transactional(readOnly = true)
+    public DoctorProfileResponseDTO getProfile() {
+        User user = requireCurrentDoctorUser();
+        DoctorProfile profile = doctorProfileRepository.findByUser(user)
+                .orElseThrow(() -> new BadRequestException("Doctor profile not found"));
+        return toResponse(user, profile);
+    }
+
+    /**
+     * Updates the doctor's personal and professional information. When the login
+     * email changes, a new JWT is issued so the client can refresh its session
+     * transparently.
+     */
+    @Transactional
+    public UpdateDoctorProfileResponseDTO updateProfile(UpdateDoctorProfileRequestDTO request) {
+        User user = requireCurrentDoctorUser();
+
+        String newEmail = request.email().trim();
+        boolean emailChanged = !user.getEmail().equalsIgnoreCase(newEmail);
+        if (emailChanged && userRepository.existsByEmail(newEmail)) {
+            throw new BadRequestException("This email is already in use by another account");
+        }
+
+        user.setFirstName(request.firstName().trim());
+        user.setLastName(request.lastName().trim());
+        user.setEmail(newEmail);
+
+        DoctorProfile profile = doctorProfileRepository.findByUser(user)
+                .orElseThrow(() -> new BadRequestException("Doctor profile not found"));
+        String phone = request.phoneNumber() == null ? null : request.phoneNumber().trim();
+        profile.setPhoneNumber(phone.isEmpty() ? null : phone);
+        String specialty = request.specialty() == null ? null : request.specialty().trim();
+        profile.setSpecialty(specialty.isEmpty() ? null : specialty);
+        String licenseNumber = request.licenseNumber() == null ? null : request.licenseNumber().trim();
+        profile.setLicenseNumber(licenseNumber.isEmpty() ? null : licenseNumber);
+
+        userRepository.save(user);
+        doctorProfileRepository.save(profile);
+
+        String token = emailChanged ? jwtService.generateToken(user) : null;
+        return new UpdateDoctorProfileResponseDTO(
+                user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                profile.getPhoneNumber(),
+                profile.getSpecialty(),
+                profile.getLicenseNumber(),
+                user.getRole().name(),
+                user.getCreatedAt().toString(),
+                token);
+    }
+
+    /**
+     * Changes the doctor's password after verifying the current one. The new
+     * password must differ from the current and match its confirmation.
+     */
+    @Transactional
+    public void changePassword(ChangePasswordRequestDTO request) {
+        User user = requireCurrentDoctorUser();
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new BadRequestException("Current password is incorrect");
+        }
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new BadRequestException("New password and confirmation do not match");
+        }
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new BadRequestException("New password must be different from your current password");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
     }
 
     @Transactional(readOnly = true)
@@ -92,15 +182,34 @@ public class DoctorService {
     }
 
     private DoctorProfile requireCurrentDoctor() {
-        User user = resolveCurrentUser();
-        if (user.getRole() != Role.DOCTOR) {
-            throw new BadRequestException("Only doctors can perform this operation");
-        }
+        User user = requireCurrentDoctorUser();
         return doctorProfileRepository.findByUser(user)
                 .orElseThrow(() -> new BadRequestException("Doctor profile not found"));
     }
 
+    /** Resolves the authenticated user, requiring the {@link Role#DOCTOR} role. */
+    private User requireCurrentDoctorUser() {
+        User user = resolveCurrentUser();
+        if (user.getRole() != Role.DOCTOR) {
+            throw new BadRequestException("Only doctors can perform this operation");
+        }
+        return user;
+    }
+
     private static String fullName(User user) {
         return user.getFirstName() + " " + user.getLastName();
+    }
+
+    private DoctorProfileResponseDTO toResponse(User user, DoctorProfile profile) {
+        return new DoctorProfileResponseDTO(
+                user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                profile.getPhoneNumber(),
+                profile.getSpecialty(),
+                profile.getLicenseNumber(),
+                user.getRole().name(),
+                user.getCreatedAt().toString());
     }
 }
