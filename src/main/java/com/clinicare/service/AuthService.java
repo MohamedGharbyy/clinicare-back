@@ -4,10 +4,14 @@ import com.clinicare.dto.LoginRequestDTO;
 import com.clinicare.dto.LoginResponseDTO;
 import com.clinicare.dto.RegisterRequestDTO;
 import com.clinicare.dto.RegisterResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.DoctorProfile;
 import com.clinicare.entity.PatientProfile;
 import com.clinicare.entity.Role;
 import com.clinicare.entity.User;
+import com.clinicare.exception.AccountBannedException;
+import com.clinicare.exception.AccountDeletedException;
+import com.clinicare.exception.AccountDisabledException;
 import com.clinicare.exception.BadRequestException;
 import com.clinicare.exception.EmailAlreadyExistsException;
 import com.clinicare.exception.InvalidCredentialsException;
@@ -78,10 +82,24 @@ public class AuthService {
         return new RegisterResponseDTO(user.getId(), user.getEmail(), user.getRole());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginResponseDTO login(LoginRequestDTO request) {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(InvalidCredentialsException::new);
+
+        if (user.reconcileBan()) {
+            userRepository.save(user);
+        }
+
+        if (user.getStatus() == AccountStatus.DISABLED) {
+            throw new AccountDisabledException();
+        }
+        if (user.getStatus() == AccountStatus.DELETED) {
+            throw new AccountDeletedException();
+        }
+        if (user.getStatus() == AccountStatus.BANNED) {
+            throw new AccountBannedException(user.getBanExpiresAt());
+        }
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new InvalidCredentialsException();

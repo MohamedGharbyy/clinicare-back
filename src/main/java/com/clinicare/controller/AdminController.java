@@ -3,14 +3,23 @@ package com.clinicare.controller;
 import com.clinicare.dto.AdminDashboardResponseDTO;
 import com.clinicare.dto.AdminDoctorResponseDTO;
 import com.clinicare.dto.AdminPatientResponseDTO;
+import com.clinicare.dto.AdminUserResponseDTO;
 import com.clinicare.dto.AppointmentResponseDTO;
+import com.clinicare.dto.BanRequestDTO;
 import com.clinicare.dto.PrescriptionResponseDTO;
+import com.clinicare.exception.BadRequestException;
+import com.clinicare.security.JwtService;
 import com.clinicare.service.AdminService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -24,9 +33,11 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final JwtService jwtService;
 
-    public AdminController(AdminService adminService) {
+    public AdminController(AdminService adminService, JwtService jwtService) {
         this.adminService = adminService;
+        this.jwtService = jwtService;
     }
 
     /**
@@ -50,6 +61,58 @@ public class AdminController {
     @GetMapping("/doctors")
     public ResponseEntity<List<AdminDoctorResponseDTO>> listDoctors() {
         return ResponseEntity.ok(adminService.listDoctors());
+    }
+
+    /**
+     * Returns every managed PATIENT/DOCTOR account. Deleted accounts are
+     * excluded unless {@code includeDeleted=true}.
+     */
+    @GetMapping("/users")
+    public ResponseEntity<List<AdminUserResponseDTO>> listAccounts(
+            @RequestParam(defaultValue = "false") boolean includeDeleted) {
+        return ResponseEntity.ok(adminService.listAccounts(includeDeleted));
+    }
+
+    /**
+     * Soft-deletes an account. The user can no longer log in and is hidden from
+     * the active list, but historical records are preserved. Admin accounts and
+     * the acting Admin's own account are protected by the backend.
+     */
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<Void> deleteAccount(@PathVariable("id") Long id, HttpServletRequest request) {
+        adminService.deleteAccount(id, currentAdminId(request));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Disables an account so the user cannot log in until re-enabled. */
+    @PostMapping("/users/{id}/disable")
+    public ResponseEntity<AdminUserResponseDTO> disableAccount(
+            @PathVariable("id") Long id, HttpServletRequest request) {
+        return ResponseEntity.ok(adminService.disableAccount(id, currentAdminId(request)));
+    }
+
+    /** Re-enables a disabled account. */
+    @PostMapping("/users/{id}/enable")
+    public ResponseEntity<AdminUserResponseDTO> enableAccount(
+            @PathVariable("id") Long id, HttpServletRequest request) {
+        return ResponseEntity.ok(adminService.enableAccount(id, currentAdminId(request)));
+    }
+
+    /** Temporarily bans an account for the supplied number of days. */
+    @PostMapping("/users/{id}/ban")
+    public ResponseEntity<AdminUserResponseDTO> banAccount(
+            @PathVariable("id") Long id,
+            @RequestBody BanRequestDTO body,
+            HttpServletRequest request) {
+        return ResponseEntity.ok(adminService.banAccount(id, body.durationDays(), currentAdminId(request)));
+    }
+
+    private Long currentAdminId(HttpServletRequest request) {
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header == null || !header.startsWith("Bearer ")) {
+            throw new BadRequestException("Missing authentication token");
+        }
+        return jwtService.extractUserId(header.substring(7));
     }
 
     /** Returns every appointment across the platform, ordered by date/time. */

@@ -42,6 +42,28 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage(), Map.of()));
     }
 
+    @ExceptionHandler(AccountDisabledException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccountDisabled(AccountDisabledException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(AccountDeletedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccountDeleted(AccountDeletedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(AccountBannedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccountBanned(AccountBannedException ex) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        if (ex.getBanExpiresAt() != null) {
+            fields.put("banExpiresAt", ex.getBanExpiresAt().toString());
+        }
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), ex.getMessage(), fields));
+    }
+
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidCredentials() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
