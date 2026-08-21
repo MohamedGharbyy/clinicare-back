@@ -43,7 +43,7 @@ public class PrescriptionService {
             .comparing(Prescription::getCreationDate);
 
     private static final java.util.Set<AppointmentStatus> RELATIONSHIP_STATUSES =
-            java.util.Set.of(AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED);
+            java.util.Set.of(AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS, AppointmentStatus.COMPLETED);
 
     private final PrescriptionRepository prescriptionRepository;
     private final PrescriptionMedicationRepository prescriptionMedicationRepository;

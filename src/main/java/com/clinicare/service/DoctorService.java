@@ -151,7 +151,7 @@ public class DoctorService {
     public List<DoctorPatientResponseDTO> getMyPatients() {
         DoctorProfile doctor = requireCurrentDoctor();
         List<AppointmentStatus> relationshipStatuses =
-                List.of(AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED);
+                List.of(AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS, AppointmentStatus.COMPLETED);
         return appointmentRepository.findByDoctorWithPatients(doctor, relationshipStatuses).stream()
                 .map(Appointment::getPatient)
                 .distinct()

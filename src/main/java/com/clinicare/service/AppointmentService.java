@@ -69,18 +69,22 @@ public class AppointmentService {
     }
 
     /**
-     * Background task that runs periodically to transition appointments
-     * whose scheduled date/time has passed.
+     * Background task that runs periodically to advance appointments through their
+     * lifecycle based on the scheduled date/time. The backend is the single
+     * source of truth so transitions happen regardless of whether any client is open.
      * <p>
-     * PENDING appointments become REJECTED.
-     * CONFIRMED appointments become COMPLETED.
-     * This ensures the pending-request count stays accurate without
-     * requiring the frontend to be open.
+     * PENDING appointments become REJECTED once their scheduled time has passed
+     * (the doctor never acted on the request).
+     * CONFIRMED appointments become IN_PROGRESS when their scheduled start time is
+     * reached, and then COMPLETED 30 minutes after the scheduled start. An
+     * IN_PROGRESS appointment becomes COMPLETED once the 30-minute window elapses.
+     * Terminal states (COMPLETED, REJECTED, CANCELLED) are never changed.
      */
     @Scheduled(fixedRate = 60_000) // run every 60 seconds
     @Transactional
     public void transitionPastAppointments() {
         LocalDateTime now = nowInZone();
+        final int IN_PROGRESS_DURATION_MINUTES = 30;
 
         // Find all PENDING appointments whose scheduled date/time is in the past
         List<Appointment> pendingPast = appointmentRepository.findAll().stream()
@@ -98,19 +102,26 @@ public class AppointmentService {
             appointmentRepository.save(a);
         }
 
-        // Find all CONFIRMED appointments that were accepted but whose time has passed
-        List<Appointment> confirmedPast = appointmentRepository.findAll().stream()
-                .filter(a -> a.getStatus() == AppointmentStatus.CONFIRMED)
-                .filter(a -> {
-                    LocalDateTime appointmentDateTime =
-                            LocalDateTime.of(a.getAppointmentDate(), a.getAppointmentTime());
-                    return appointmentDateTime.isBefore(now);
-                })
-                .toList();
+        // Advance CONFIRMED / IN_PROGRESS appointments through the active window.
+        for (Appointment a : appointmentRepository.findAll()) {
+            AppointmentStatus status = a.getStatus();
+            if (status != AppointmentStatus.CONFIRMED && status != AppointmentStatus.IN_PROGRESS) {
+                continue;
+            }
+            LocalDateTime start = LocalDateTime.of(a.getAppointmentDate(), a.getAppointmentTime());
+            LocalDateTime end = start.plusMinutes(IN_PROGRESS_DURATION_MINUTES);
 
-        for (Appointment a : confirmedPast) {
-            a.setStatus(AppointmentStatus.COMPLETED);
-            appointmentRepository.save(a);
+            if (status == AppointmentStatus.CONFIRMED) {
+                if (!now.isBefore(start)) {
+                    a.setStatus(now.isBefore(end) ? AppointmentStatus.IN_PROGRESS : AppointmentStatus.COMPLETED);
+                    appointmentRepository.save(a);
+                }
+            } else { // AppointmentStatus.IN_PROGRESS
+                if (!now.isBefore(end)) {
+                    a.setStatus(AppointmentStatus.COMPLETED);
+                    appointmentRepository.save(a);
+                }
+            }
         }
     }
 

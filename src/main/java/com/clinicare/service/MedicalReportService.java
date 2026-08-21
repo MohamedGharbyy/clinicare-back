@@ -35,7 +35,7 @@ public class MedicalReportService {
             .thenComparing(MedicalReport::getCreatedAt);
 
     private static final java.util.Set<AppointmentStatus> RELATIONSHIP_STATUSES =
-            java.util.Set.of(AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED);
+            java.util.Set.of(AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS, AppointmentStatus.COMPLETED);
 
     private final MedicalReportRepository medicalReportRepository;
     private final UserRepository userRepository;
