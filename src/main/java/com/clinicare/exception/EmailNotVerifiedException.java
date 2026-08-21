@@ -8,7 +8,7 @@ package com.clinicare.exception;
 public class EmailNotVerifiedException extends RuntimeException {
 
     public EmailNotVerifiedException() {
-        super("Please verify your email address before logging in. "
-                + "Check your inbox for the confirmation link sent by CliniCare.");
+        super("Your email address is not verified. "
+                + "Check your inbox for the verification code sent by CliniCare.");
     }
 }

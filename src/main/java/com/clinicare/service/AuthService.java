@@ -1,6 +1,7 @@
 package com.clinicare.service;
 
 import com.clinicare.dto.EmailVerificationResponseDTO;
+import com.clinicare.dto.ResendVerificationResponseDTO;
 import com.clinicare.dto.LoginRequestDTO;
 import com.clinicare.dto.LoginResponseDTO;
 import com.clinicare.dto.RegisterRequestDTO;
@@ -87,7 +88,13 @@ public class AuthService {
 
         emailVerificationService.createTokenAndSendEmail(user);
 
-        return new RegisterResponseDTO(user.getId(), user.getEmail(), user.getRole(), user.isEmailVerified());
+        return new RegisterResponseDTO(
+                user.getId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getRole(),
+                user.isEmailVerified());
     }
 
     @Transactional
@@ -121,10 +128,16 @@ public class AuthService {
                 jwtService.generateToken(user),
                 user.getId(),
                 user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
                 user.getRole());
     }
 
-    public EmailVerificationResponseDTO verifyEmail(String token) {
-        return emailVerificationService.verifyEmail(token);
+    public EmailVerificationResponseDTO verifyEmail(String email, String code) {
+        return emailVerificationService.verifyEmail(email, code);
+    }
+
+    public ResendVerificationResponseDTO resendVerification(String email) {
+        return emailVerificationService.resendCode(email);
     }
 }

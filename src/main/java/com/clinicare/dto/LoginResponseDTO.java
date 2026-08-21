@@ -5,5 +5,11 @@ import com.clinicare.entity.Role;
 /**
  * Response returned after a successful login: a JWT plus basic user info.
  */
-public record LoginResponseDTO(String token, Long id, String email, Role role) {
+public record LoginResponseDTO(
+        String token,
+        Long id,
+        String email,
+        String firstName,
+        String lastName,
+        Role role) {
 }

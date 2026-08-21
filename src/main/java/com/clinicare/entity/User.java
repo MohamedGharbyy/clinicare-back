@@ -50,6 +50,9 @@ public class User {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = true;
 
+    @Column(name = "verification_email_sent_at")
+    private LocalDateTime verificationEmailSentAt;
+
     @Column(name = "ban_expires_at")
     private LocalDateTime banExpiresAt;
 
@@ -129,6 +132,14 @@ public class User {
 
     public void setEmailVerified(boolean emailVerified) {
         this.emailVerified = emailVerified;
+    }
+
+    public LocalDateTime getVerificationEmailSentAt() {
+        return verificationEmailSentAt;
+    }
+
+    public void setVerificationEmailSentAt(LocalDateTime verificationEmailSentAt) {
+        this.verificationEmailSentAt = verificationEmailSentAt;
     }
 
     public LocalDateTime getBanExpiresAt() {

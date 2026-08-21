@@ -5,7 +5,6 @@ import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.CancellationReason;
 import com.clinicare.entity.DoctorProfile;
 import com.clinicare.entity.PatientProfile;
-import com.clinicare.entity.Role;
 import com.clinicare.entity.User;
 import com.clinicare.repository.AppointmentRepository;
 import com.clinicare.repository.DoctorProfileRepository;

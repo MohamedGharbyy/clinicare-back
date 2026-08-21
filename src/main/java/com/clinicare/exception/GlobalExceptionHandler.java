@@ -73,14 +73,24 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(EmailNotVerifiedException.class)
     public ResponseEntity<ApiErrorResponse> handleEmailNotVerified(EmailNotVerifiedException ex) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("reason", "email_not_verified");
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), ex.getMessage(), Map.of()));
+                .body(new ApiErrorResponse(HttpStatus.FORBIDDEN.value(), ex.getMessage(), fields));
     }
 
     @ExceptionHandler(EmailVerificationException.class)
     public ResponseEntity<ApiErrorResponse> handleEmailVerification(EmailVerificationException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(VerificationResendCooldownException.class)
+    public ResponseEntity<ApiErrorResponse> handleResendCooldown(VerificationResendCooldownException ex) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("retryAfterSeconds", String.valueOf(ex.getRetryAfterSeconds()));
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(new ApiErrorResponse(HttpStatus.TOO_MANY_REQUESTS.value(), ex.getMessage(), fields));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

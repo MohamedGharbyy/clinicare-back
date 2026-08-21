@@ -7,5 +7,11 @@ import com.clinicare.entity.Role;
  * password or its hash. {@code emailVerified} tells the client whether the
  * account still needs to confirm its email before it can log in.
  */
-public record RegisterResponseDTO(Long id, String email, Role role, boolean emailVerified) {
+public record RegisterResponseDTO(
+        Long id,
+        String email,
+        String firstName,
+        String lastName,
+        Role role,
+        boolean emailVerified) {
 }

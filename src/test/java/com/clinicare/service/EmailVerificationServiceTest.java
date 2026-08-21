@@ -1,10 +1,12 @@
 package com.clinicare.service;
 
 import com.clinicare.dto.EmailVerificationResponseDTO;
+import com.clinicare.dto.ResendVerificationResponseDTO;
 import com.clinicare.entity.TokenPurpose;
 import com.clinicare.entity.User;
 import com.clinicare.entity.VerificationToken;
 import com.clinicare.exception.EmailVerificationException;
+import com.clinicare.exception.VerificationResendCooldownException;
 import com.clinicare.repository.UserRepository;
 import com.clinicare.repository.VerificationTokenRepository;
 import org.junit.jupiter.api.Test;
@@ -30,8 +32,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class EmailVerificationServiceTest {
 
-    private static final String BASE_URL = "http://localhost:8080";
-    private static final long EXPIRATION_MINUTES = 1440;
+    private static final long EXPIRATION_MINUTES = 10;
+    private static final long RESEND_COOLDOWN_SECONDS = 60;
 
     @Mock
     private VerificationTokenRepository tokenRepository;
@@ -43,6 +45,8 @@ class EmailVerificationServiceTest {
     @Captor
     private ArgumentCaptor<VerificationToken> tokenCaptor;
     @Captor
+    private ArgumentCaptor<User> userCaptor;
+    @Captor
     private ArgumentCaptor<String> toCaptor;
     @Captor
     private ArgumentCaptor<String> subjectCaptor;
@@ -50,7 +54,8 @@ class EmailVerificationServiceTest {
     private ArgumentCaptor<String> htmlCaptor;
 
     private EmailVerificationService newService() {
-        return new EmailVerificationService(tokenRepository, userRepository, emailService, BASE_URL, EXPIRATION_MINUTES);
+        return new EmailVerificationService(tokenRepository, userRepository, emailService,
+                EXPIRATION_MINUTES, RESEND_COOLDOWN_SECONDS);
     }
 
     private User user(long id, boolean verified) {
@@ -73,51 +78,55 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    void createTokenAndSendEmail_storesOnlyHashAndEmailsLink() {
+    void createTokenAndSendEmail_storesOnlyHashAndEmailsCode() {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
 
-        String raw = svc.createTokenAndSendEmail(user);
+        String code = svc.createTokenAndSendEmail(user);
 
-        // Raw token is URL-safe Base64 (no padding, no + or /).
-        assertThat(raw).matches("[A-Za-z0-9_-]+");
-        assertThat(raw.length()).isGreaterThan(20);
+        // Raw code is exactly 6 numeric digits.
+        assertThat(code).matches("\\d{6}");
 
         verify(tokenRepository).deleteByUser_IdAndUsedAtIsNull(1L);
         verify(tokenRepository).save(tokenCaptor.capture());
+        verify(userRepository).save(userCaptor.capture());
         verify(emailService).sendHtmlMessage(toCaptor.capture(), subjectCaptor.capture(), htmlCaptor.capture());
 
         VerificationToken saved = tokenCaptor.getValue();
-        // Only the hash is stored, never the raw token.
-        assertThat(saved.getTokenHash()).isEqualTo(sha256(raw));
-        assertThat(saved.getTokenHash()).isNotEqualTo(raw);
+        // Only the hash of "<userId>:<code>" is stored, never the raw code.
+        assertThat(saved.getTokenHash()).isEqualTo(sha256("1:" + code));
+        assertThat(saved.getTokenHash()).isNotEqualTo(code);
         assertThat(saved.getUser().getId()).isEqualTo(1L);
         assertThat(saved.getPurpose()).isEqualTo(TokenPurpose.EMAIL_VERIFICATION);
         assertThat(saved.getUsedAt()).isNull();
         assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now());
         assertThat(saved.getCreatedAt()).isNotNull();
+        assertThat(userCaptor.getValue().getVerificationEmailSentAt()).isNotNull();
 
         assertThat(toCaptor.getValue()).isEqualTo("patient@example.com");
         assertThat(subjectCaptor.getValue()).contains("CliniCare");
         String html = htmlCaptor.getValue();
         assertThat(html).contains("CliniCare");
-        assertThat(html).contains("http://localhost:8080/api/auth/verify-email?token=" + raw);
-        assertThat(html).contains("did not create");
-        assertThat(html).contains("expire");
+        assertThat(html).contains(code);
+        assertThat(html).contains("verification code");
+        // No verification link is embedded.
+        assertThat(html).doesNotContain("/api/auth/verify-email");
+        assertThat(html).doesNotContain("?token=");
     }
 
     @Test
-    void verifyEmail_validToken_marksVerifiedAndInvalidatesToken() {
+    void verifyEmail_validCode_marksVerifiedAndInvalidatesCode() {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
-        String raw = "valid-token-value";
+        String code = "482731";
         VerificationToken token = new VerificationToken();
         token.setUser(user);
         token.setUsedAt(null);
-        token.setExpiresAt(LocalDateTime.now().plusMinutes(10));
-        when(tokenRepository.findByTokenHash(sha256(raw))).thenReturn(Optional.of(token));
+        token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
-        EmailVerificationResponseDTO result = svc.verifyEmail(raw);
+        EmailVerificationResponseDTO result = svc.verifyEmail("patient@example.com", code);
 
         assertThat(result.verified()).isTrue();
         assertThat(user.isEmailVerified()).isTrue();
@@ -127,17 +136,18 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    void verifyEmail_alreadyVerifiedUser_returnsSuccessAndInvalidatesToken() {
+    void verifyEmail_alreadyVerifiedUser_returnsSuccessAndInvalidatesCode() {
         EmailVerificationService svc = newService();
         User user = user(1L, true);
-        String raw = "already-done";
+        String code = "123456";
         VerificationToken token = new VerificationToken();
         token.setUser(user);
         token.setUsedAt(null);
-        token.setExpiresAt(LocalDateTime.now().plusMinutes(10));
-        when(tokenRepository.findByTokenHash(sha256(raw))).thenReturn(Optional.of(token));
+        token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
-        EmailVerificationResponseDTO result = svc.verifyEmail(raw);
+        EmailVerificationResponseDTO result = svc.verifyEmail("patient@example.com", code);
 
         assertThat(result.verified()).isTrue();
         assertThat(token.getUsedAt()).isNotNull();
@@ -145,51 +155,143 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    void verifyEmail_blankToken_throws() {
+    void verifyEmail_unknownAccount_throws() {
         EmailVerificationService svc = newService();
-        assertThatThrownBy(() -> svc.verifyEmail("  "))
+        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> svc.verifyEmail("nobody@example.com", "000000"))
                 .isInstanceOf(EmailVerificationException.class);
         verify(tokenRepository, never()).findByTokenHash(any());
     }
 
     @Test
-    void verifyEmail_unknownToken_throws() {
+    void verifyEmail_blankInputs_throw() {
         EmailVerificationService svc = newService();
-        when(tokenRepository.findByTokenHash(any())).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> svc.verifyEmail("whatever"))
+        assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", "   "))
+                .isInstanceOf(EmailVerificationException.class);
+        assertThatThrownBy(() -> svc.verifyEmail("  ", "123456"))
                 .isInstanceOf(EmailVerificationException.class);
     }
 
     @Test
-    void verifyEmail_expiredToken_throwsAndDoesNotVerify() {
+    void verifyEmail_unknownCode_throws() {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
-        String raw = "expired";
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.findByTokenHash(any())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", "999999"))
+                .isInstanceOf(EmailVerificationException.class);
+    }
+
+    @Test
+    void verifyEmail_expiredCode_throwsAndDoesNotVerify() {
+        EmailVerificationService svc = newService();
+        User user = user(1L, false);
+        String code = "111111";
         VerificationToken token = new VerificationToken();
         token.setUser(user);
         token.setUsedAt(null);
         token.setExpiresAt(LocalDateTime.now().minusMinutes(1));
-        when(tokenRepository.findByTokenHash(sha256(raw))).thenReturn(Optional.of(token));
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
-        assertThatThrownBy(() -> svc.verifyEmail(raw))
+        assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", code))
                 .isInstanceOf(EmailVerificationException.class);
         assertThat(user.isEmailVerified()).isFalse();
         assertThat(token.getUsedAt()).isNull();
     }
 
     @Test
-    void verifyEmail_usedToken_throws() {
+    void verifyEmail_usedCode_throws() {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
-        String raw = "used";
+        String code = "222222";
         VerificationToken token = new VerificationToken();
         token.setUser(user);
         token.setUsedAt(LocalDateTime.now().minusMinutes(5));
-        token.setExpiresAt(LocalDateTime.now().plusMinutes(10));
-        when(tokenRepository.findByTokenHash(sha256(raw))).thenReturn(Optional.of(token));
+        token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
-        assertThatThrownBy(() -> svc.verifyEmail(raw))
+        assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", code))
                 .isInstanceOf(EmailVerificationException.class);
         assertThat(user.isEmailVerified()).isFalse();
+    }
+
+    @Test
+    void verifyEmail_sameCodeCannotBeReused() {
+        EmailVerificationService svc = newService();
+        User user = user(1L, false);
+        String code = "333333";
+        VerificationToken token = new VerificationToken();
+        token.setUser(user);
+        token.setUsedAt(null);
+        token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
+
+        // First use succeeds.
+        assertThat(svc.verifyEmail("patient@example.com", code).verified()).isTrue();
+
+        // Second use must fail because the code is now marked used.
+        VerificationToken used = new VerificationToken();
+        used.setUser(user);
+        used.setUsedAt(LocalDateTime.now());
+        used.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(used));
+        assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", code))
+                .isInstanceOf(EmailVerificationException.class);
+    }
+
+    @Test
+    void resendCode_sendsNewCodeAndInvalidatesPrevious() {
+        EmailVerificationService svc = newService();
+        User user = user(1L, false);
+        user.setVerificationEmailSentAt(LocalDateTime.now().minusMinutes(5));
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+
+        ResendVerificationResponseDTO result = svc.resendCode("patient@example.com");
+
+        assertThat(result.sent()).isTrue();
+        verify(tokenRepository).deleteByUser_IdAndUsedAtIsNull(1L);
+        verify(tokenRepository).save(tokenCaptor.capture());
+        verify(emailService).sendHtmlMessage(any(), any(), any());
+        assertThat(tokenCaptor.getValue().getTokenHash()).isNotEqualTo(sha256("1:oldcode"));
+    }
+
+    @Test
+    void resendCode_unknownEmail_doesNotRevealExistence() {
+        EmailVerificationService svc = newService();
+        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ResendVerificationResponseDTO result = svc.resendCode("ghost@example.com");
+
+        assertThat(result.sent()).isFalse();
+        verify(emailService, never()).sendHtmlMessage(any(), any(), any());
+    }
+
+    @Test
+    void resendCode_alreadyVerified_doesNotRevealExistence() {
+        EmailVerificationService svc = newService();
+        User user = user(1L, true);
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+
+        ResendVerificationResponseDTO result = svc.resendCode("patient@example.com");
+
+        assertThat(result.sent()).isFalse();
+        verify(emailService, never()).sendHtmlMessage(any(), any(), any());
+    }
+
+    @Test
+    void resendCode_withinCooldown_throws() {
+        EmailVerificationService svc = newService();
+        User user = user(1L, false);
+        user.setVerificationEmailSentAt(LocalDateTime.now());
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> svc.resendCode("patient@example.com"))
+                .isInstanceOf(VerificationResendCooldownException.class)
+                .satisfies(ex -> assertThat(((VerificationResendCooldownException) ex).getRetryAfterSeconds())
+                        .isBetween(1L, RESEND_COOLDOWN_SECONDS));
+        verify(emailService, never()).sendHtmlMessage(any(), any(), any());
     }
 }

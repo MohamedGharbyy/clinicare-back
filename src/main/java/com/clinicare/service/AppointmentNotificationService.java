@@ -378,8 +378,8 @@ public class AppointmentNotificationService {
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
                              style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;
                                     box-shadow:0 4px 16px rgba(0,0,0,0.06);">
-                        <tr><td style="background:#0d9488;padding:24px 32px;">
-                          <span style="font-size:22px;font-weight:700;color:#ffffff;">CliniCare</span>
+                        <tr><td style="background:#38B6FF;padding:18px 32px;">
+                          <span style="display:inline-block;background:#ffffff;border-radius:12px;padding:6px;line-height:0;">__LOGO__</span>
                         </td></tr>
                         <tr><td style="padding:32px;">
                           <h1 style="margin:0 0 16px;font-size:20px;color:#0f172a;">__HEADING__</h1>
@@ -403,7 +403,17 @@ public class AppointmentNotificationService {
                 .replace("__HEADING__", escapeHtml(heading))
                 .replace("__INTRO__", introHtml)
                 .replace("__DETAILS__", detailsHtml)
-                .replace("__NEXT__", next);
+                .replace("__NEXT__", next)
+                .replace("__LOGO__", logoHtml());
+    }
+
+    private static String logoHtml() {
+        String uri = EmailTemplateAssets.logoDataUri();
+        if (uri == null || uri.isEmpty()) {
+            return "<span style=\"font-size:22px;font-weight:700;color:#ffffff;\">CliniCare</span>";
+        }
+        return "<img src=\"" + uri + "\" alt=\"CliniCare\" width=\"40\" height=\"40\" "
+                + "style=\"display:block;width:40px;height:40px;object-fit:contain;\" />";
     }
 
     private static String escapeHtml(String value) {
