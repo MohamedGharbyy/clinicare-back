@@ -47,6 +47,9 @@ public class User {
     @Column(name = "status", nullable = false)
     private AccountStatus status = AccountStatus.ACTIVE;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = true;
+
     @Column(name = "ban_expires_at")
     private LocalDateTime banExpiresAt;
 
@@ -118,6 +121,14 @@ public class User {
 
     public void setStatus(AccountStatus status) {
         this.status = status;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
     }
 
     public LocalDateTime getBanExpiresAt() {

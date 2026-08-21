@@ -1,5 +1,6 @@
 package com.clinicare.controller;
 
+import com.clinicare.dto.EmailVerificationResponseDTO;
 import com.clinicare.dto.LoginRequestDTO;
 import com.clinicare.dto.LoginResponseDTO;
 import com.clinicare.dto.RegisterRequestDTO;
@@ -8,9 +9,11 @@ import com.clinicare.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -32,5 +35,10 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @GetMapping("/verify-email")
+    public ResponseEntity<EmailVerificationResponseDTO> verifyEmail(@RequestParam("token") String token) {
+        return ResponseEntity.ok(authService.verifyEmail(token));
     }
 }

@@ -1,5 +1,6 @@
 package com.clinicare.service;
 
+import com.clinicare.dto.EmailVerificationResponseDTO;
 import com.clinicare.dto.LoginRequestDTO;
 import com.clinicare.dto.LoginResponseDTO;
 import com.clinicare.dto.RegisterRequestDTO;
@@ -14,6 +15,7 @@ import com.clinicare.exception.AccountDeletedException;
 import com.clinicare.exception.AccountDisabledException;
 import com.clinicare.exception.BadRequestException;
 import com.clinicare.exception.EmailAlreadyExistsException;
+import com.clinicare.exception.EmailNotVerifiedException;
 import com.clinicare.exception.InvalidCredentialsException;
 import com.clinicare.repository.DoctorProfileRepository;
 import com.clinicare.repository.PatientProfileRepository;
@@ -34,17 +36,20 @@ public class AuthService {
     private final DoctorProfileRepository doctorProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final EmailVerificationService emailVerificationService;
 
     public AuthService(UserRepository userRepository,
                        PatientProfileRepository patientProfileRepository,
                        DoctorProfileRepository doctorProfileRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtService jwtService) {
+                       JwtService jwtService,
+                       EmailVerificationService emailVerificationService) {
         this.userRepository = userRepository;
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.emailVerificationService = emailVerificationService;
     }
 
     @Transactional
@@ -62,6 +67,7 @@ public class AuthService {
         user.setFirstName(request.firstName());
         user.setLastName(request.lastName());
         user.setRole(request.role());
+        user.setEmailVerified(false);
         userRepository.save(user);
 
         if (request.role() == Role.DOCTOR) {
@@ -79,7 +85,9 @@ public class AuthService {
             patientProfileRepository.save(profile);
         }
 
-        return new RegisterResponseDTO(user.getId(), user.getEmail(), user.getRole());
+        emailVerificationService.createTokenAndSendEmail(user);
+
+        return new RegisterResponseDTO(user.getId(), user.getEmail(), user.getRole(), user.isEmailVerified());
     }
 
     @Transactional
@@ -101,6 +109,10 @@ public class AuthService {
             throw new AccountBannedException(user.getBanExpiresAt());
         }
 
+        if (!user.isEmailVerified()) {
+            throw new EmailNotVerifiedException();
+        }
+
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new InvalidCredentialsException();
         }
@@ -110,5 +122,9 @@ public class AuthService {
                 user.getId(),
                 user.getEmail(),
                 user.getRole());
+    }
+
+    public EmailVerificationResponseDTO verifyEmail(String token) {
+        return emailVerificationService.verifyEmail(token);
     }
 }
