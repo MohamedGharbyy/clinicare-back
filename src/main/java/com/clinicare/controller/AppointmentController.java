@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -97,8 +98,9 @@ public class AppointmentController {
      */
     @DeleteMapping("/patient/appointments/{id}")
     public ResponseEntity<AppointmentResponseDTO> cancelAppointment(
-            @PathVariable("id") Long appointmentId) {
-        AppointmentResponseDTO response = appointmentService.cancelAppointment(appointmentId);
+            @PathVariable("id") Long appointmentId,
+            @RequestParam(name = "reason", required = false) String reason) {
+        AppointmentResponseDTO response = appointmentService.cancelAppointment(appointmentId, reason);
         return ResponseEntity.ok(response);
     }
 

@@ -60,17 +60,20 @@ public class AdminService {
     private final AppointmentRepository appointmentRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final UserRepository userRepository;
+    private final AppointmentNotificationService notificationService;
 
     public AdminService(PatientProfileRepository patientProfileRepository,
                         DoctorProfileRepository doctorProfileRepository,
                         AppointmentRepository appointmentRepository,
                         PrescriptionRepository prescriptionRepository,
-                        UserRepository userRepository) {
+                        UserRepository userRepository,
+                        AppointmentNotificationService notificationService) {
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
         this.prescriptionRepository = prescriptionRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     /** Aggregated counters for the dashboard summary cards. */
@@ -256,6 +259,8 @@ public class AdminService {
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
         Appointment saved = appointmentRepository.save(appointment);
+        // CANCELLED: notify both the patient and the doctor (clinic-initiated).
+        notificationService.notifyCancelled(saved, "Cancelled by the clinic.");
         return toAppointmentResponse(saved);
     }
 

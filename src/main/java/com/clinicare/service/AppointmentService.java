@@ -51,17 +51,20 @@ public class AppointmentService {
     private final PatientProfileRepository patientProfileRepository;
     private final DoctorProfileRepository doctorProfileRepository;
     private final Validator validator;
+    private final AppointmentNotificationService notificationService;
 
     public AppointmentService(AppointmentRepository appointmentRepository,
                               UserRepository userRepository,
                               PatientProfileRepository patientProfileRepository,
                               DoctorProfileRepository doctorProfileRepository,
-                              Validator validator) {
+                              Validator validator,
+                              AppointmentNotificationService notificationService) {
         this.appointmentRepository = appointmentRepository;
         this.userRepository = userRepository;
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.validator = validator;
+        this.notificationService = notificationService;
     }
 /** Returns the current date/time in the application's JVM timezone. */
     private LocalDateTime nowInZone() {
@@ -79,6 +82,12 @@ public class AppointmentService {
      * reached, and then COMPLETED 30 minutes after the scheduled start. An
      * IN_PROGRESS appointment becomes COMPLETED once the 30-minute window elapses.
      * Terminal states (COMPLETED, REJECTED, CANCELLED) are never changed.
+     * <p>
+     * This background task deliberately does not send notification emails.
+     * IN_PROGRESS and COMPLETED are not yet meant to email automatically, and the
+     * automatic PENDING&rarr;REJECTED transition is a timeout, not a doctor action,
+     * so it stays silent. Doctor-driven transitions notify through the
+     * user-facing service methods.
      */
     @Scheduled(fixedRate = 60_000) // run every 60 seconds
     @Transactional
@@ -160,6 +169,9 @@ public class AppointmentService {
         appointment.setStatus(AppointmentStatus.PENDING);
 
         Appointment saved = appointmentRepository.save(appointment);
+        // PENDING: notify the doctor that a new request is waiting. The patient is
+        // not emailed merely for creating the request.
+        notificationService.notifyRequested(saved);
         return toResponse(saved);
     }
 
@@ -205,6 +217,8 @@ public class AppointmentService {
         Appointment appointment = requireOwnPendingAppointment(appointmentId);
         appointment.setStatus(AppointmentStatus.CONFIRMED);
         Appointment saved = appointmentRepository.save(appointment);
+        // CONFIRMED: notify both the patient and the doctor.
+        notificationService.notifyConfirmed(saved);
         return toResponse(saved);
     }
 
@@ -223,6 +237,8 @@ public class AppointmentService {
         Appointment appointment = requireOwnPendingAppointment(appointmentId);
         appointment.setStatus(AppointmentStatus.REJECTED);
         Appointment saved = appointmentRepository.save(appointment);
+        // REFUSED: notify the patient that the request was declined.
+        notificationService.notifyRefused(saved);
         return toResponse(saved);
     }
 
@@ -264,7 +280,7 @@ public class AppointmentService {
      * The appointment is then marked {@link AppointmentStatus#CANCELLED}.
      */
     @Transactional
-    public AppointmentResponseDTO cancelAppointment(Long appointmentId) {
+    public AppointmentResponseDTO cancelAppointment(Long appointmentId, String reason) {
         PatientProfile patient = requireCurrentPatient();
 
         Appointment appointment = appointmentRepository.findById(appointmentId)
@@ -280,6 +296,9 @@ public class AppointmentService {
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
         Appointment saved = appointmentRepository.save(appointment);
+        // CANCELLED: notify both the patient and the doctor, including a reason
+        // when one was supplied.
+        notificationService.notifyCancelled(saved, reason);
         return toResponse(saved);
     }
 
