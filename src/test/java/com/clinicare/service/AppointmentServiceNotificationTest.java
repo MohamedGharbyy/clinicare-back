@@ -191,7 +191,7 @@ class AppointmentServiceNotificationTest {
         AppointmentNotificationService notif = mock(AppointmentNotificationService.class);
         AdminService adminService = new AdminService(patientProfileRepository, doctorProfileRepository,
                 appointmentRepository, mock(com.clinicare.repository.PrescriptionRepository.class),
-                userRepository, notif);
+                userRepository, notif, mock(BanAppointmentCancellationService.class));
         Appointment existing = appointment(1L, AppointmentStatus.CONFIRMED, 1L, 2L);
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(appointmentRepository.save(any())).thenAnswer(i -> i.getArgument(0));

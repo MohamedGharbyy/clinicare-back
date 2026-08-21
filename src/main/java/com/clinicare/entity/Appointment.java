@@ -63,6 +63,10 @@ public class Appointment {
     @Column(name = "last_notified_status", length = 20)
     private AppointmentStatus lastNotifiedStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancellation_reason", length = 30)
+    private CancellationReason cancellationReason;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -137,6 +141,14 @@ public class Appointment {
 
     public void setLastNotifiedStatus(AppointmentStatus lastNotifiedStatus) {
         this.lastNotifiedStatus = lastNotifiedStatus;
+    }
+
+    public CancellationReason getCancellationReason() {
+        return cancellationReason;
+    }
+
+    public void setCancellationReason(CancellationReason cancellationReason) {
+        this.cancellationReason = cancellationReason;
     }
 
     public LocalDateTime getCreatedAt() {

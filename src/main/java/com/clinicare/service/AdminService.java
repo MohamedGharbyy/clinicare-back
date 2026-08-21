@@ -61,19 +61,22 @@ public class AdminService {
     private final PrescriptionRepository prescriptionRepository;
     private final UserRepository userRepository;
     private final AppointmentNotificationService notificationService;
+    private final BanAppointmentCancellationService banCancellationService;
 
     public AdminService(PatientProfileRepository patientProfileRepository,
                         DoctorProfileRepository doctorProfileRepository,
                         AppointmentRepository appointmentRepository,
                         PrescriptionRepository prescriptionRepository,
                         UserRepository userRepository,
-                        AppointmentNotificationService notificationService) {
+                        AppointmentNotificationService notificationService,
+                        BanAppointmentCancellationService banCancellationService) {
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
         this.prescriptionRepository = prescriptionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.banCancellationService = banCancellationService;
     }
 
     /** Aggregated counters for the dashboard summary cards. */
@@ -181,11 +184,21 @@ public class AdminService {
             throw new BadRequestException("Ban duration must be a positive number of days");
         }
         User user = requireManageable(userId, adminId, "ban");
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime banExpiresAt = now.plusDays(durationDays);
         user.setStatus(AccountStatus.BANNED);
-        user.setBanExpiresAt(LocalDateTime.now().plusDays(durationDays));
+        user.setBanExpiresAt(banExpiresAt);
         user.setDeletedAt(null);
         user.setDeletedById(null);
-        return toUserResponse(userRepository.save(user), loadAdminEmails());
+        User saved = userRepository.save(user);
+
+        // Cancel the user's future appointments that fall within the ban window and
+        // notify the affected parties. Email delivery happens through the notification
+        // service, which isolates failures: a failed email can never roll back the
+        // ban or the appointment cancellations committed above.
+        banCancellationService.cancelForBannedUser(saved, now, banExpiresAt);
+
+        return toUserResponse(saved, loadAdminEmails());
     }
 
     private User requireManageable(Long userId, Long adminId, String action) {

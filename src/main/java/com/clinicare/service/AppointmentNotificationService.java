@@ -8,7 +8,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
  * Sends transactional appointment emails through {@link EmailService} and keeps
@@ -148,6 +150,106 @@ public class AppointmentNotificationService {
         }
     }
 
+    /**
+     * CANCELLED because of a ban: email the banned account holder once, listing
+     * every appointment that was automatically cancelled during the ban period.
+     * Works for either a banned patient or a banned doctor &mdash; the recipient
+     * is always the banned {@link User}.
+     */
+    public void notifyBannedAccountCancellations(User bannedUser,
+                                                 List<Appointment> appointments,
+                                                 LocalDateTime banExpiresAt) {
+        if (appointments == null || appointments.isEmpty()) {
+            return;
+        }
+        String to = bannedUser.getEmail();
+        try {
+            emailService.sendHtmlMessage(to,
+                    "Your CliniCare appointments were cancelled due to a banned account",
+                    buildBannedAccountHtml(bannedUser, appointments, banExpiresAt));
+        } catch (Exception ex) {
+            logBanEmailFailure(to, bannedUser, ex);
+        }
+    }
+
+    /**
+     * CANCELLED because of a ban: email the unaffected counterparty (a doctor
+     * when the patient was banned, or a patient when the doctor was banned)
+     * once, listing only the appointments they shared with the banned account.
+     */
+    public void notifyAffectedCounterpartyCancellations(User affectedUser,
+                                                        List<Appointment> appointments,
+                                                        LocalDateTime banExpiresAt) {
+        if (appointments == null || appointments.isEmpty()) {
+            return;
+        }
+        String to = affectedUser.getEmail();
+        try {
+            emailService.sendHtmlMessage(to,
+                    "Appointments cancelled due to a banned account",
+                    buildAffectedCounterpartyHtml(affectedUser, appointments, banExpiresAt));
+        } catch (Exception ex) {
+            logBanEmailFailure(to, affectedUser, ex);
+        }
+    }
+
+    private String buildBannedAccountHtml(User bannedUser, List<Appointment> appointments,
+                                          LocalDateTime banExpiresAt) {
+        String intro = "Hello " + escapeHtml(bannedUser.getFirstName()) + ",<br/>"
+                + "Your CliniCare account has been temporarily banned by an administrator. "
+                + "As a result, the following appointment(s) that were scheduled while your "
+                + "account was banned have been automatically cancelled. Each was cancelled "
+                + "because the account was banned during its scheduled appointment period.";
+        String next = "You will be able to use CliniCare again once the ban ends on <strong>"
+                + escapeHtml(banExpiresAt.format(DATE_FMT)) + "</strong>. After that you can "
+                + "book new appointments as usual. These cancelled appointments will not be reinstated.";
+        return wrap("Your appointments were cancelled due to a banned account",
+                intro, appointmentTableHtml(appointments), next);
+    }
+
+    private String buildAffectedCounterpartyHtml(User affectedUser, List<Appointment> appointments,
+                                                 LocalDateTime banExpiresAt) {
+        String intro = "Hello " + escapeHtml(affectedUser.getFirstName()) + ",<br/>"
+                + "A participant's CliniCare account has been temporarily banned. Because the "
+                + "account is banned during the scheduled appointment period, the following "
+                + "appointment(s) with them have been automatically cancelled. Each was cancelled "
+                + "because the account was banned during its scheduled appointment period.";
+        String next = "No action is required from you. These appointments will not be reinstated.";
+        return wrap("Appointments cancelled due to a banned account",
+                intro, appointmentTableHtml(appointments), next);
+    }
+
+    /** Renders the affected appointments as a single summary table. */
+    private String appointmentTableHtml(List<Appointment> appointments) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "
+                + "style=\"border:1px solid #eef2f7;border-radius:8px;overflow:hidden;\">");
+        sb.append("<tr style=\"background:#f8fafc;\">")
+                .append(th("Patient")).append(th("Doctor"))
+                .append(th("Date")).append(th("Time"))
+                .append("</tr>");
+        for (Appointment a : appointments) {
+            sb.append("<tr>")
+                    .append(td(patientName(a)))
+                    .append(td("Dr. " + doctorLastName(a)))
+                    .append(td(a.getAppointmentDate().format(DATE_FMT)))
+                    .append(td(a.getAppointmentTime().format(TIME_FMT)))
+                    .append("</tr>");
+        }
+        sb.append("</table>");
+        return sb.toString();
+    }
+
+    private String th(String label) {
+        return "<th style=\"padding:8px 12px;text-align:left;color:#6b7280;font-size:13px;"
+                + "font-weight:600;border-bottom:1px solid #eef2f7;\">" + escapeHtml(label) + "</th>";
+    }
+
+    private String td(String value) {
+        return "<td style=\"padding:8px 12px;color:#111827;font-weight:600;font-size:14px;"
+                + "border-bottom:1px solid #eef2f7;\">" + escapeHtml(value) + "</td>";
+    }
+
     private boolean alreadyNotified(Appointment appointment, AppointmentStatus status) {
         return appointment.getLastNotifiedStatus() == status;
     }
@@ -158,12 +260,19 @@ public class AppointmentNotificationService {
     }
 
     private void logEmailFailure(Appointment appointment, AppointmentStatus status,
-                                 String recipient, Exception ex) {
+                                  String recipient, Exception ex) {
         // Log safely: never include credentials. The appointment id is internal
         // and only used here for diagnostics, never placed in the email body.
         Long appointmentId = appointment.getId();
         log.error("Failed to send {} appointment notification to {} (appointment id={}): {}",
                 status, recipient, appointmentId, ex.getMessage());
+    }
+
+    private void logBanEmailFailure(String recipient, User user, Exception ex) {
+        // Log safely: never include credentials. Only the recipient address and
+        // the internal user id are recorded for diagnostics.
+        log.error("Failed to send ban-related appointment cancellation email to {} (user id={}): {}",
+                recipient, user.getId(), ex.getMessage());
     }
 
     // ---------------------------------------------------------------------------
