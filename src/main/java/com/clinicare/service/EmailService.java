@@ -1,8 +1,10 @@
 package com.clinicare.service;
 
+import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -19,6 +21,10 @@ import java.util.Properties;
  * <p>Every message is sent from the support address configured via
  * {@code spring.mail.username}, displayed to recipients as
  * {@code clinicare.mail.from-name} (e.g. "CliniCare Support").
+ *
+ * <p>HTML bodies are built by {@link EmailTemplate}. When a body references the
+ * CliniCare logo through {@code cid:clinicare-logo}, this service attaches the
+ * logo as an inline image part, which is the email-compatible way to show it.
  */
 @Service
 public class EmailService {
@@ -45,7 +51,14 @@ public class EmailService {
         mailSender.send(message);
     }
 
-    /** Sends an HTML email. The {@code from} personal name is preserved. */
+    /**
+     * Sends an HTML email. The {@code from} personal name is preserved.
+     *
+     * <p>When the body references the CliniCare logo through
+     * {@code cid:clinicare-logo}, the logo bytes are attached as an inline
+     * (CID) image part. Keeping the image out of the HTML is what makes it
+     * render in Gmail and keeps the HTML part far below Gmail's clipping limit.
+     */
     public void sendHtmlMessage(String to, String subject, String htmlBody) {
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         try {
@@ -54,10 +67,28 @@ public class EmailService {
             helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(htmlBody, true);
+            attachInlineLogoIfReferenced(helper, htmlBody);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to build email message", ex);
         }
         mailSender.send(mimeMessage);
+    }
+
+    /** Adds the inline logo part only when the HTML actually references it. */
+    private void attachInlineLogoIfReferenced(MimeMessageHelper helper, String htmlBody)
+            throws MessagingException {
+        if (htmlBody == null
+                || !htmlBody.contains("cid:" + EmailTemplateAssets.LOGO_CONTENT_ID)
+                || !EmailTemplateAssets.hasLogo()) {
+            return;
+        }
+        ByteArrayResource logo = new ByteArrayResource(EmailTemplateAssets.logoBytes()) {
+            @Override
+            public String getFilename() {
+                return EmailTemplateAssets.LOGO_FILE_NAME;
+            }
+        };
+        helper.addInline(EmailTemplateAssets.LOGO_CONTENT_ID, logo, EmailTemplateAssets.LOGO_CONTENT_TYPE);
     }
 
     /** Verifies the underlying SMTP connection can be established. */

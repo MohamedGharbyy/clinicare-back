@@ -3,6 +3,7 @@ package com.clinicare.service;
 import com.clinicare.dto.PrescriptionMedicationResponseDTO;
 import com.clinicare.dto.PrescriptionRequestDTO;
 import com.clinicare.dto.PrescriptionResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
 import com.clinicare.entity.PatientProfile;
@@ -211,7 +212,7 @@ public class PrescriptionService {
         } else {
             throw new BadRequestException("Unsupported authentication principal");
         }
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED)
                 .orElseThrow(() -> new BadRequestException("Authenticated user not found"));
     }
 

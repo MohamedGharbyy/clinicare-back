@@ -1,5 +1,6 @@
 package com.clinicare.security;
 
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.User;
 import com.clinicare.repository.UserRepository;
 import jakarta.servlet.FilterChain;
@@ -54,7 +55,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (jwtService.isTokenValid(token)
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
             String email = jwtService.extractEmail(token);
-            User user = userRepository.findByEmail(email).orElse(null);
+            User user = userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED).orElse(null);
             if (user != null) {
                 if (user.reconcileBan()) {
                     userRepository.save(user);

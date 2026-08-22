@@ -6,6 +6,7 @@ import com.clinicare.dto.DoctorProfileResponseDTO;
 import com.clinicare.dto.DoctorResponseDTO;
 import com.clinicare.dto.UpdateDoctorProfileRequestDTO;
 import com.clinicare.dto.UpdateDoctorProfileResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.Appointment;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
@@ -59,10 +60,11 @@ public class DoctorService {
         this.jwtService = jwtService;
     }
 
-    /** Returns all registered doctors, ordered by last name. */
+    /** Returns all registered doctors with an active account, ordered by last name. */
     @Transactional(readOnly = true)
     public List<DoctorResponseDTO> listDoctors() {
         return doctorProfileRepository.findAll().stream()
+                .filter(d -> d.getUser().getStatus() == AccountStatus.ACTIVE)
                 .sorted(BY_NAME)
                 .map(d -> new DoctorResponseDTO(
                         d.getId(),
@@ -91,7 +93,7 @@ public class DoctorService {
 
         String newEmail = request.email().trim();
         boolean emailChanged = !user.getEmail().equalsIgnoreCase(newEmail);
-        if (emailChanged && userRepository.existsByEmail(newEmail)) {
+        if (emailChanged && userRepository.existsByEmailAndStatusNot(newEmail, AccountStatus.DELETED)) {
             throw new BadRequestException("This email is already in use by another account");
         }
 
@@ -177,7 +179,7 @@ public class DoctorService {
         } else {
             throw new BadRequestException("Unsupported authentication principal");
         }
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED)
                 .orElseThrow(() -> new BadRequestException("Authenticated user not found"));
     }
 

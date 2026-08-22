@@ -4,6 +4,7 @@ import com.clinicare.dto.ChangePasswordRequestDTO;
 import com.clinicare.dto.UpdatePatientProfileRequestDTO;
 import com.clinicare.dto.UpdatePatientProfileResponseDTO;
 import com.clinicare.dto.UserProfileResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.PatientProfile;
 import com.clinicare.entity.Role;
 import com.clinicare.entity.User;
@@ -63,7 +64,7 @@ public class PatientService {
 
         String newEmail = request.email().trim();
         boolean emailChanged = !user.getEmail().equalsIgnoreCase(newEmail);
-        if (emailChanged && userRepository.existsByEmail(newEmail)) {
+        if (emailChanged && userRepository.existsByEmailAndStatusNot(newEmail, AccountStatus.DELETED)) {
             throw new BadRequestException("This email is already in use by another account");
         }
 
@@ -130,7 +131,7 @@ public class PatientService {
         } else {
             throw new BadRequestException("Unsupported authentication principal");
         }
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED)
                 .orElseThrow(() -> new BadRequestException("Authenticated user not found"));
     }
 

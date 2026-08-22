@@ -2,6 +2,8 @@ package com.clinicare.service;
 
 import com.clinicare.dto.AppointmentRequestDTO;
 import com.clinicare.dto.AppointmentResponseDTO;
+import com.clinicare.entity.AccountStatus;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.Appointment;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
@@ -153,6 +155,10 @@ public class AppointmentService {
 
         DoctorProfile doctor = doctorProfileRepository.findById(request.doctorId())
                 .orElseThrow(() -> new BadRequestException("Doctor not found"));
+
+        if (doctor.getUser().getStatus() != AccountStatus.ACTIVE) {
+            throw new BadRequestException("Doctor is not available for new appointments");
+        }
 
         LocalDateTime requestedAt = LocalDateTime.of(request.appointmentDate(), request.appointmentTime());
         if (requestedAt.isBefore(LocalDateTime.now())) {
@@ -335,7 +341,7 @@ public class AppointmentService {
         } else {
             throw new BadRequestException("Unsupported authentication principal");
         }
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED)
                 .orElseThrow(() -> new BadRequestException("Authenticated user not found"));
     }
 

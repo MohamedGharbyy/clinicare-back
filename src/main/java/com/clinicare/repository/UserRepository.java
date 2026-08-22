@@ -1,5 +1,6 @@
 package com.clinicare.repository;
 
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.Role;
 import com.clinicare.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,5 +14,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
 
+    Optional<User> findByEmailAndStatusNot(String email, AccountStatus status);
+
+    boolean existsByEmailAndStatusNot(String email, AccountStatus status);
+
     List<User> findByRole(Role role);
+
+    long countByRoleAndStatusNot(Role role, AccountStatus status);
 }

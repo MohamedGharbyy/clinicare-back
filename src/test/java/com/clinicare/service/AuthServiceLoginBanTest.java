@@ -63,7 +63,7 @@ class AuthServiceLoginBanTest {
         User u = user();
         u.setStatus(AccountStatus.BANNED);
         u.setBanExpiresAt(LocalDateTime.now().plusDays(3));
-        when(userRepository.findByEmail("banned@example.com")).thenReturn(Optional.of(u));
+        when(userRepository.findByEmailAndStatusNot("banned@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(u));
 
         LoginRequestDTO request = new LoginRequestDTO("banned@example.com", "password");
 
@@ -77,7 +77,7 @@ class AuthServiceLoginBanTest {
         u.setStatus(AccountStatus.BANNED);
         u.setBanExpiresAt(LocalDateTime.now().minusDays(1)); // already expired
         u.setPasswordHash("hash");
-        when(userRepository.findByEmail("banned@example.com")).thenReturn(Optional.of(u));
+        when(userRepository.findByEmailAndStatusNot("banned@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(u));
         when(passwordEncoder.matches("password", "hash")).thenReturn(true);
         when(jwtService.generateToken(u)).thenReturn("token");
 

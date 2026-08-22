@@ -72,7 +72,7 @@ class AuthServiceVerificationTest {
 
     @Test
     void register_createsUnverifiedAccountAndSendsVerificationEmail() {
-        when(userRepository.existsByEmail("patient@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(false);
 
         RegisterResponseDTO result = authService.register(patientRequest());
 
@@ -86,7 +86,7 @@ class AuthServiceVerificationTest {
     @Test
     void login_unverifiedAccount_throwsEmailNotVerified() {
         User user = user(1L, Role.PATIENT, false);
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.login(
                 new com.clinicare.dto.LoginRequestDTO("patient@example.com", "password123")))
@@ -99,7 +99,7 @@ class AuthServiceVerificationTest {
     @Test
     void login_verifiedPatient_succeeds() {
         User user = user(1L, Role.PATIENT, true);
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "hashed")).thenReturn(true);
         when(jwtService.generateToken(user)).thenReturn("jwt-token");
 
@@ -113,7 +113,7 @@ class AuthServiceVerificationTest {
     @Test
     void login_adminAccount_isNotBlockedByVerification() {
         User admin = user(2L, Role.ADMIN, true);
-        when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(userRepository.findByEmailAndStatusNot("admin@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(admin));
         when(passwordEncoder.matches("password123", "hashed")).thenReturn(true);
         when(jwtService.generateToken(admin)).thenReturn("admin-jwt");
 
@@ -127,7 +127,7 @@ class AuthServiceVerificationTest {
     @Test
     void login_verifiedAccount_wrongPassword_throwsInvalidCredentials() {
         User user = user(1L, Role.PATIENT, true);
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.login(

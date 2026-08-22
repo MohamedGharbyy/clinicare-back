@@ -68,5 +68,33 @@ class EmailServiceTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         sent.writeTo(out);
         assertThat(out.toString()).contains("<p>Hi</p>");
+        // A body that does not reference the logo carries no image part.
+        assertThat(out.toString()).doesNotContain(EmailTemplateAssets.LOGO_FILE_NAME);
+    }
+
+    @Test
+    void sendHtmlMessageAttachesTheLogoAsAnInlineCidPartWhenReferenced() throws Exception {
+        MimeMessage mimeMessage = new MimeMessage(Session.getInstance(new Properties()));
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        String html = EmailTemplate.titled("Appointment confirmed").message("Hello").render();
+        assertThat(html).contains("cid:" + EmailTemplateAssets.LOGO_CONTENT_ID);
+
+        newService().sendHtmlMessage("patient@example.com", "Appointment confirmed", html);
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        captor.getValue().writeTo(out);
+        String raw = out.toString();
+
+        // The image travels as a related inline part, not inside the HTML body.
+        assertThat(raw).contains("Content-ID: <" + EmailTemplateAssets.LOGO_CONTENT_ID + ">");
+        assertThat(raw).contains(EmailTemplateAssets.LOGO_CONTENT_TYPE);
+        assertThat(raw).contains("multipart/related");
+        assertThat(raw).contains("Content-Disposition: inline");
+        assertThat(raw).doesNotContain("data:image");
+
+        // The whole message (HTML + logo part) stays a small, unclipped email.
+        assertThat(out.size()).isLessThan(102 * 1024);
     }
 }

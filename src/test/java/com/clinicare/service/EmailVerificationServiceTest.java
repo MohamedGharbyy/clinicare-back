@@ -2,6 +2,7 @@ package com.clinicare.service;
 
 import com.clinicare.dto.EmailVerificationResponseDTO;
 import com.clinicare.dto.ResendVerificationResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.TokenPurpose;
 import com.clinicare.entity.User;
 import com.clinicare.entity.VerificationToken;
@@ -123,7 +124,7 @@ class EmailVerificationServiceTest {
         token.setUser(user);
         token.setUsedAt(null);
         token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
         EmailVerificationResponseDTO result = svc.verifyEmail("patient@example.com", code);
@@ -144,7 +145,7 @@ class EmailVerificationServiceTest {
         token.setUser(user);
         token.setUsedAt(null);
         token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
         EmailVerificationResponseDTO result = svc.verifyEmail("patient@example.com", code);
@@ -157,7 +158,7 @@ class EmailVerificationServiceTest {
     @Test
     void verifyEmail_unknownAccount_throws() {
         EmailVerificationService svc = newService();
-        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailAndStatusNot("nobody@example.com", AccountStatus.DELETED)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> svc.verifyEmail("nobody@example.com", "000000"))
                 .isInstanceOf(EmailVerificationException.class);
         verify(tokenRepository, never()).findByTokenHash(any());
@@ -176,7 +177,7 @@ class EmailVerificationServiceTest {
     void verifyEmail_unknownCode_throws() {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(tokenRepository.findByTokenHash(any())).thenReturn(Optional.empty());
         assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", "999999"))
                 .isInstanceOf(EmailVerificationException.class);
@@ -191,7 +192,7 @@ class EmailVerificationServiceTest {
         token.setUser(user);
         token.setUsedAt(null);
         token.setExpiresAt(LocalDateTime.now().minusMinutes(1));
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
         assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", code))
@@ -209,7 +210,7 @@ class EmailVerificationServiceTest {
         token.setUser(user);
         token.setUsedAt(LocalDateTime.now().minusMinutes(5));
         token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
         assertThatThrownBy(() -> svc.verifyEmail("patient@example.com", code))
@@ -226,7 +227,7 @@ class EmailVerificationServiceTest {
         token.setUser(user);
         token.setUsedAt(null);
         token.setExpiresAt(LocalDateTime.now().plusMinutes(5));
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
         when(tokenRepository.findByTokenHash(sha256("1:" + code))).thenReturn(Optional.of(token));
 
         // First use succeeds.
@@ -247,7 +248,7 @@ class EmailVerificationServiceTest {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
         user.setVerificationEmailSentAt(LocalDateTime.now().minusMinutes(5));
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
 
         ResendVerificationResponseDTO result = svc.resendCode("patient@example.com");
 
@@ -261,7 +262,7 @@ class EmailVerificationServiceTest {
     @Test
     void resendCode_unknownEmail_doesNotRevealExistence() {
         EmailVerificationService svc = newService();
-        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailAndStatusNot("ghost@example.com", AccountStatus.DELETED)).thenReturn(Optional.empty());
 
         ResendVerificationResponseDTO result = svc.resendCode("ghost@example.com");
 
@@ -273,7 +274,7 @@ class EmailVerificationServiceTest {
     void resendCode_alreadyVerified_doesNotRevealExistence() {
         EmailVerificationService svc = newService();
         User user = user(1L, true);
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
 
         ResendVerificationResponseDTO result = svc.resendCode("patient@example.com");
 
@@ -286,7 +287,7 @@ class EmailVerificationServiceTest {
         EmailVerificationService svc = newService();
         User user = user(1L, false);
         user.setVerificationEmailSentAt(LocalDateTime.now());
-        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndStatusNot("patient@example.com", AccountStatus.DELETED)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> svc.resendCode("patient@example.com"))
                 .isInstanceOf(VerificationResendCooldownException.class)

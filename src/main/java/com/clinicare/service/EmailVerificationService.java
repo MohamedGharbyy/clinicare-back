@@ -2,6 +2,7 @@ package com.clinicare.service;
 
 import com.clinicare.dto.EmailVerificationResponseDTO;
 import com.clinicare.dto.ResendVerificationResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.TokenPurpose;
 import com.clinicare.entity.User;
 import com.clinicare.entity.VerificationToken;
@@ -101,7 +102,7 @@ public class EmailVerificationService {
                     "The verification code is missing or invalid.");
         }
 
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED)
                 .orElseThrow(() -> new EmailVerificationException(
                         "This verification code is invalid. It may have expired or already been used."));
 
@@ -148,7 +149,7 @@ public class EmailVerificationService {
                     "If an account exists for this address, a verification code has been sent.", null);
         }
 
-        Optional<User> maybeUser = userRepository.findByEmail(email);
+        Optional<User> maybeUser = userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED);
         if (maybeUser.isEmpty() || maybeUser.get().isEmailVerified()) {
             // Do not reveal whether the account exists or is already verified.
             return new ResendVerificationResponseDTO(false,
@@ -198,72 +199,21 @@ public class EmailVerificationService {
     }
 
     private String buildEmailHtml(User user, String code) {
-        String firstName = Optional.ofNullable(user.getFirstName()).orElse("there");
+        String firstName = Optional.ofNullable(user.getFirstName())
+                .filter(name -> !name.isBlank())
+                .orElse("there");
         String expiryText = expirationMinutes >= 60
                 ? Math.max(1, expirationMinutes / 60) + " hours"
                 : expirationMinutes + " minutes";
-        String template = """
-                <!DOCTYPE html>
-                <html lang="en">
-                <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/></head>
-                <body style="margin:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr><td align="center" style="padding:32px 16px;">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-                             style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;
-                                    box-shadow:0 4px 16px rgba(0,0,0,0.06);">
-                        <tr><td style="background:#38B6FF;padding:18px 32px;">
-                          <span style="display:inline-block;background:#ffffff;border-radius:12px;padding:6px;line-height:0;">__LOGO__</span>
-                        </td></tr>
-                        <tr><td style="padding:32px;">
-                          <h1 style="margin:0 0 16px;font-size:20px;color:#0f172a;">Verify your email address</h1>
-                          <p style="margin:0 0 16px;line-height:1.5;color:#374151;">
-                            Hello __FIRST_NAME__, thank you for creating a CliniCare account. Use the
-                            verification code below to confirm that you own this address and to activate
-                            your account.
-                          </p>
-                          <p style="margin:0 0 8px;line-height:1.5;color:#374151;font-size:14px;">
-                            Your CliniCare verification code is:
-                          </p>
-                          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
-                            <tr>
-                              <td align="center" style="background:#eaf7ff;border:1px solid #b8e6ff;border-radius:12px;padding:18px 28px;">
-                                <span style="font-size:34px;font-weight:700;letter-spacing:8px;color:#0f172a;font-family:'Courier New',monospace;">__CODE__</span>
-                              </td>
-                            </tr>
-                          </table>
-                          <p style="margin:0 0 24px;line-height:1.5;color:#374151;font-size:14px;">
-                            Enter this code within <strong>__EXPIRY__</strong>. Until you confirm, you
-                            will not be able to sign in.
-                          </p>
-                          <p style="margin:24px 0 0;line-height:1.5;color:#6b7280;font-size:13px;">
-                            If you did not create a CliniCare account, you can safely ignore this email.
-                            No account will be created and this code will expire on its own.
-                          </p>
-                        </td></tr>
-                        <tr><td style="padding:16px 32px;background:#f8fafc;color:#9ca3af;font-size:12px;">
-                          &copy; CliniCare &mdash; This is an automated message, please do not reply.
-                        </td></tr>
-                      </table>
-                    </td></tr>
-                  </table>
-                </body>
-                </html>
-                """;
-        return template
-                .replace("__FIRST_NAME__", firstName)
-                .replace("__CODE__", code)
-                .replace("__EXPIRY__", expiryText)
-                .replace("__LOGO__", logoHtml());
-    }
-
-    private String logoHtml() {
-        String uri = EmailTemplateAssets.logoDataUri();
-        if (uri == null || uri.isEmpty()) {
-            return "<span style=\"font-size:22px;font-weight:700;color:#ffffff;\">CliniCare</span>";
-        }
-        return "<img src=\"" + uri + "\" alt=\"CliniCare\" width=\"40\" height=\"40\" "
-                + "style=\"display:block;width:40px;height:40px;object-fit:contain;\" />";
+        return EmailTemplate.titled("Verify your email address")
+                .message("Hello " + firstName + ", thank you for creating a CliniCare account. "
+                        + "Your CliniCare verification code is:")
+                .code(code)
+                .detail("Valid for", expiryText)
+                .action("Enter this code in CliniCare to activate your account. Until you confirm it you will "
+                        + "not be able to sign in. If you did not create a CliniCare account you can safely "
+                        + "ignore this email.")
+                .render();
     }
 
     private String generateCode() {

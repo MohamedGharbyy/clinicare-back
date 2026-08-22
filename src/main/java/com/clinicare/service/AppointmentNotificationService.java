@@ -45,6 +45,9 @@ public class AppointmentNotificationService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
+    private static final List<String> APPOINTMENT_TABLE_HEADERS =
+            List.of("Patient", "Doctor", "Date", "Time");
+
     private final EmailService emailService;
     private final AppointmentRepository appointmentRepository;
 
@@ -195,59 +198,37 @@ public class AppointmentNotificationService {
 
     private String buildBannedAccountHtml(User bannedUser, List<Appointment> appointments,
                                           LocalDateTime banExpiresAt) {
-        String intro = "Hello " + escapeHtml(bannedUser.getFirstName()) + ",<br/>"
-                + "Your CliniCare account has been temporarily banned by an administrator. "
-                + "As a result, the following appointment(s) that were scheduled while your "
-                + "account was banned have been automatically cancelled. Each was cancelled "
-                + "because the account was banned during its scheduled appointment period.";
-        String next = "You will be able to use CliniCare again once the ban ends on <strong>"
-                + escapeHtml(banExpiresAt.format(DATE_FMT)) + "</strong>. After that you can "
-                + "book new appointments as usual. These cancelled appointments will not be reinstated.";
-        return wrap("Your appointments were cancelled due to a banned account",
-                intro, appointmentTableHtml(appointments), next);
+        return EmailTemplate.titled("Your appointments were cancelled due to a banned account")
+                .message("Hello " + bannedUser.getFirstName() + ", your CliniCare account has been temporarily "
+                        + "banned by an administrator. The appointment(s) below were automatically cancelled "
+                        + "because the account was banned during its scheduled appointment period.")
+                .table(APPOINTMENT_TABLE_HEADERS, appointmentRows(appointments))
+                .action("You will be able to use CliniCare again once the ban ends on "
+                        + banExpiresAt.format(DATE_FMT) + ", and you can then book new appointments as usual. "
+                        + "These cancelled appointments will not be reinstated.")
+                .render();
     }
 
     private String buildAffectedCounterpartyHtml(User affectedUser, List<Appointment> appointments,
                                                  LocalDateTime banExpiresAt) {
-        String intro = "Hello " + escapeHtml(affectedUser.getFirstName()) + ",<br/>"
-                + "A participant's CliniCare account has been temporarily banned. Because the "
-                + "account is banned during the scheduled appointment period, the following "
-                + "appointment(s) with them have been automatically cancelled. Each was cancelled "
-                + "because the account was banned during its scheduled appointment period.";
-        String next = "No action is required from you. These appointments will not be reinstated.";
-        return wrap("Appointments cancelled due to a banned account",
-                intro, appointmentTableHtml(appointments), next);
+        return EmailTemplate.titled("Appointments cancelled due to a banned account")
+                .message("Hello " + affectedUser.getFirstName() + ", a participant's CliniCare account has been "
+                        + "temporarily banned. The appointment(s) below with them were automatically cancelled "
+                        + "because the account was banned during its scheduled appointment period.")
+                .table(APPOINTMENT_TABLE_HEADERS, appointmentRows(appointments))
+                .action("No action is required from you. These appointments will not be reinstated.")
+                .render();
     }
 
-    /** Renders the affected appointments as a single summary table. */
-    private String appointmentTableHtml(List<Appointment> appointments) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "
-                + "style=\"border:1px solid #eef2f7;border-radius:8px;overflow:hidden;\">");
-        sb.append("<tr style=\"background:#f8fafc;\">")
-                .append(th("Patient")).append(th("Doctor"))
-                .append(th("Date")).append(th("Time"))
-                .append("</tr>");
-        for (Appointment a : appointments) {
-            sb.append("<tr>")
-                    .append(td(patientName(a)))
-                    .append(td("Dr. " + doctorLastName(a)))
-                    .append(td(a.getAppointmentDate().format(DATE_FMT)))
-                    .append(td(a.getAppointmentTime().format(TIME_FMT)))
-                    .append("</tr>");
-        }
-        sb.append("</table>");
-        return sb.toString();
-    }
-
-    private String th(String label) {
-        return "<th style=\"padding:8px 12px;text-align:left;color:#6b7280;font-size:13px;"
-                + "font-weight:600;border-bottom:1px solid #eef2f7;\">" + escapeHtml(label) + "</th>";
-    }
-
-    private String td(String value) {
-        return "<td style=\"padding:8px 12px;color:#111827;font-weight:600;font-size:14px;"
-                + "border-bottom:1px solid #eef2f7;\">" + escapeHtml(value) + "</td>";
+    /** Renders the affected appointments as the rows of a single summary table. */
+    private List<List<String>> appointmentRows(List<Appointment> appointments) {
+        return appointments.stream()
+                .map(a -> List.of(
+                        patientName(a),
+                        "Dr. " + doctorLastName(a),
+                        a.getAppointmentDate().format(DATE_FMT),
+                        a.getAppointmentTime().format(TIME_FMT)))
+                .toList();
     }
 
     private boolean alreadyNotified(Appointment appointment, AppointmentStatus status) {
@@ -280,152 +261,69 @@ public class AppointmentNotificationService {
     // ---------------------------------------------------------------------------
 
     private String buildRequestedHtml(Appointment a) {
-        String intro = "Hello Dr. " + escapeHtml(doctorLastName(a)) + ",<br/>"
-                + "A new appointment request from <strong>" + escapeHtml(patientName(a))
-                + "</strong> is waiting for your review.";
-        String next = "Please confirm or decline this request from your CliniCare dashboard. "
-                + "The patient has been notified that their request is pending.";
-        return wrap("New appointment request", intro, detailsRows(a, null), next);
+        return withDetails(EmailTemplate.titled("New appointment request")
+                .message("Hello Dr. " + doctorLastName(a) + ", a new appointment request from "
+                        + patientName(a) + " is waiting for your review."), a, null)
+                .action("Please confirm or decline this request from your CliniCare dashboard. "
+                        + "The patient has been notified that their request is pending.")
+                .render();
     }
 
     private String buildConfirmedPatientHtml(Appointment a) {
-        String intro = "Hello " + escapeHtml(a.getPatient().getUser().getFirstName()) + ",<br/>"
-                + "Your appointment with <strong>Dr. " + escapeHtml(doctorLastName(a))
-                + "</strong> has been confirmed.";
-        String next = "No further action is needed. Please arrive a few minutes early. "
-                + "You can view or cancel this appointment at any time from your CliniCare dashboard.";
-        return wrap("Your appointment is confirmed", intro, detailsRows(a, null), next);
+        return withDetails(EmailTemplate.titled("Your appointment is confirmed")
+                .message("Hello " + a.getPatient().getUser().getFirstName() + ", your appointment with Dr. "
+                        + doctorLastName(a) + " has been confirmed."), a, null)
+                .action("No further action is needed. Please arrive a few minutes early. You can view or cancel "
+                        + "this appointment at any time from your CliniCare dashboard.")
+                .render();
     }
 
     private String buildConfirmedDoctorHtml(Appointment a) {
-        String intro = "Hello Dr. " + escapeHtml(doctorLastName(a)) + ",<br/>"
-                + "The appointment with <strong>" + escapeHtml(patientName(a))
-                + "</strong> has been confirmed.";
-        String next = "This appointment is now on your schedule. "
-                + "You can review it from your CliniCare dashboard.";
-        return wrap("Appointment confirmed", intro, detailsRows(a, null), next);
+        return withDetails(EmailTemplate.titled("Appointment confirmed")
+                .message("Hello Dr. " + doctorLastName(a) + ", the appointment with " + patientName(a)
+                        + " has been confirmed."), a, null)
+                .action("This appointment is now on your schedule. You can review it from your "
+                        + "CliniCare dashboard.")
+                .render();
     }
 
     private String buildRefusedHtml(Appointment a) {
-        String intro = "Hello " + escapeHtml(a.getPatient().getUser().getFirstName()) + ",<br/>"
-                + "We are sorry to let you know that your appointment request with <strong>Dr. "
-                + escapeHtml(doctorLastName(a)) + "</strong> for <strong>"
-                + escapeHtml(a.getAppointmentDate().format(DATE_FMT)) + " at "
-                + escapeHtml(a.getAppointmentTime().format(TIME_FMT)) + "</strong> was declined.";
-        String next = "You can request a new appointment with a different date or another doctor "
-                + "from your CliniCare dashboard.";
-        return wrap("Your appointment request was declined", intro, detailsRows(a, null), next);
+        return withDetails(EmailTemplate.titled("Your appointment request was declined")
+                .message("Hello " + a.getPatient().getUser().getFirstName() + ", your appointment request with Dr. "
+                        + doctorLastName(a) + " for " + a.getAppointmentDate().format(DATE_FMT) + " at "
+                        + a.getAppointmentTime().format(TIME_FMT) + " was declined."), a, null)
+                .action("You can request a new appointment with a different date or another doctor from your "
+                        + "CliniCare dashboard.")
+                .render();
     }
 
     private String buildCancelledHtml(Appointment a, String reason, boolean doctorPerspective) {
-        String intro;
-        if (doctorPerspective) {
-            intro = "Hello Dr. " + escapeHtml(doctorLastName(a)) + ",<br/>"
-                    + "The appointment with <strong>" + escapeHtml(patientName(a))
-                    + "</strong> scheduled for <strong>"
-                    + escapeHtml(a.getAppointmentDate().format(DATE_FMT)) + " at "
-                    + escapeHtml(a.getAppointmentTime().format(TIME_FMT)) + "</strong> has been cancelled.";
-        } else {
-            intro = "Hello " + escapeHtml(a.getPatient().getUser().getFirstName()) + ",<br/>"
-                    + "Your appointment with <strong>Dr. " + escapeHtml(doctorLastName(a))
-                    + "</strong> scheduled for <strong>"
-                    + escapeHtml(a.getAppointmentDate().format(DATE_FMT)) + " at "
-                    + escapeHtml(a.getAppointmentTime().format(TIME_FMT)) + "</strong> has been cancelled.";
-        }
+        String when = a.getAppointmentDate().format(DATE_FMT) + " at " + a.getAppointmentTime().format(TIME_FMT);
+        String message = doctorPerspective
+                ? "Hello Dr. " + doctorLastName(a) + ", the appointment with " + patientName(a)
+                        + " scheduled for " + when + " has been cancelled."
+                : "Hello " + a.getPatient().getUser().getFirstName() + ", your appointment with Dr. "
+                        + doctorLastName(a) + " scheduled for " + when + " has been cancelled.";
+        String title = doctorPerspective ? "Appointment cancelled" : "Your appointment has been cancelled";
         String next = doctorPerspective
                 ? "No further action is required."
                 : "If you still need care, please request a new appointment from your CliniCare dashboard.";
-        return wrap(doctorPerspective ? "Appointment cancelled" : "Your appointment has been cancelled",
-                intro, detailsRows(a, reason), next);
+        return withDetails(EmailTemplate.titled(title).message(message), a, reason)
+                .action(next)
+                .render();
     }
 
-    private String detailsRows(Appointment a, String reason) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(row("Patient", patientName(a)));
-        sb.append(row("Doctor", "Dr. " + doctorLastName(a)
-                + (a.getDoctor().getSpecialty() != null
-                ? " (" + a.getDoctor().getSpecialty() + ")" : "")));
-        sb.append(row("Date", a.getAppointmentDate().format(DATE_FMT)));
-        sb.append(row("Time", a.getAppointmentTime().format(TIME_FMT)));
-        if (a.getReason() != null && !a.getReason().isBlank()) {
-            sb.append(row("Reason", a.getReason()));
-        }
-        if (reason != null && !reason.isBlank()) {
-            sb.append(row("Cancellation reason", reason));
-        }
-        return sb.toString();
-    }
-
-    private String row(String label, String value) {
-        return "<tr>"
-                + "<td style=\"padding:8px 12px;border-bottom:1px solid #eef2f7;color:#6b7280;width:42%;"
-                + "font-size:14px;\">" + escapeHtml(label) + "</td>"
-                + "<td style=\"padding:8px 12px;border-bottom:1px solid #eef2f7;color:#111827;"
-                + "font-weight:600;font-size:14px;\">" + escapeHtml(value) + "</td>"
-                + "</tr>";
-    }
-
-    private String wrap(String heading, String introHtml, String detailsHtml, String nextStepHtml) {
-        String next = nextStepHtml == null ? "" :
-                "<p style=\"margin:24px 0 0;line-height:1.5;color:#374151;\">" + nextStepHtml + "</p>";
-        return """
-                <!DOCTYPE html>
-                <html lang="en">
-                <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/></head>
-                <body style="margin:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr><td align="center" style="padding:32px 16px;">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-                             style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;
-                                    box-shadow:0 4px 16px rgba(0,0,0,0.06);">
-                        <tr><td style="background:#38B6FF;padding:18px 32px;">
-                          <span style="display:inline-block;background:#ffffff;border-radius:12px;padding:6px;line-height:0;">__LOGO__</span>
-                        </td></tr>
-                        <tr><td style="padding:32px;">
-                          <h1 style="margin:0 0 16px;font-size:20px;color:#0f172a;">__HEADING__</h1>
-                          <p style="margin:0 0 20px;line-height:1.5;color:#374151;">__INTRO__</p>
-                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-                                 style="border:1px solid #eef2f7;border-radius:8px;overflow:hidden;">__DETAILS__</table>
-                          __NEXT__
-                          <p style="margin:24px 0 0;line-height:1.5;color:#6b7280;font-size:13px;">
-                            If you have any questions, contact CliniCare Support from your dashboard.
-                          </p>
-                        </td></tr>
-                        <tr><td style="padding:16px 32px;background:#f8fafc;color:#9ca3af;font-size:12px;">
-                          &copy; CliniCare &mdash; This is an automated message, please do not reply.
-                        </td></tr>
-                      </table>
-                    </td></tr>
-                  </table>
-                </body>
-                </html>
-                """
-                .replace("__HEADING__", escapeHtml(heading))
-                .replace("__INTRO__", introHtml)
-                .replace("__DETAILS__", detailsHtml)
-                .replace("__NEXT__", next)
-                .replace("__LOGO__", logoHtml());
-    }
-
-    private static String logoHtml() {
-        String uri = EmailTemplateAssets.logoDataUri();
-        if (uri == null || uri.isEmpty()) {
-            return "<span style=\"font-size:22px;font-weight:700;color:#ffffff;\">CliniCare</span>";
-        }
-        return "<img src=\"" + uri + "\" alt=\"CliniCare\" width=\"40\" height=\"40\" "
-                + "style=\"display:block;width:40px;height:40px;object-fit:contain;\" />";
-    }
-
-    private static String escapeHtml(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
+    /** Adds the human-readable appointment details; no internal database id is ever included. */
+    private EmailTemplate.Builder withDetails(EmailTemplate.Builder builder, Appointment a, String reason) {
+        String specialty = a.getDoctor().getSpecialty();
+        return builder
+                .detail("Patient", patientName(a))
+                .detail("Doctor", "Dr. " + doctorLastName(a)
+                        + (specialty != null && !specialty.isBlank() ? " (" + specialty + ")" : ""))
+                .detail("Date", a.getAppointmentDate().format(DATE_FMT))
+                .detail("Time", a.getAppointmentTime().format(TIME_FMT))
+                .detail("Reason", a.getReason())
+                .detail("Cancellation reason", reason);
     }
 
     private static String patientName(Appointment a) {

@@ -2,12 +2,14 @@ package com.clinicare.service;
 
 import com.clinicare.dto.AppointmentRequestDTO;
 import com.clinicare.dto.AppointmentResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.Appointment;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
 import com.clinicare.entity.PatientProfile;
 import com.clinicare.entity.Role;
 import com.clinicare.entity.User;
+import com.clinicare.exception.BadRequestException;
 import com.clinicare.repository.AppointmentRepository;
 import com.clinicare.repository.DoctorProfileRepository;
 import com.clinicare.repository.PatientProfileRepository;
@@ -30,6 +32,7 @@ import java.util.Collections;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -115,32 +118,10 @@ class AppointmentServiceNotificationTest {
     }
 
     @Test
-    void createAppointment_setsPendingAndNotifiesDoctorOnly() {
-        setPrincipal(PATIENT_EMAIL);
-        User patient = user(1L, Role.PATIENT, PATIENT_EMAIL);
-        User doctor = user(2L, Role.DOCTOR, DOCTOR_EMAIL);
-        when(validator.validate(any())).thenReturn(Collections.emptySet());
-        when(userRepository.findByEmail(PATIENT_EMAIL)).thenReturn(Optional.of(patient));
-        when(patientProfileRepository.findByUser(patient)).thenReturn(Optional.of(patientProfile(1L, patient)));
-        when(doctorProfileRepository.findById(2L)).thenReturn(Optional.of(doctorProfile(2L, doctor)));
-        when(appointmentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-
-        AppointmentRequestDTO request = new AppointmentRequestDTO(2L,
-                LocalDate.now().plusDays(1), LocalTime.NOON, "Annual check-up", null);
-
-        AppointmentResponseDTO result = service().createAppointment(request);
-
-        assertThat(result.status()).isEqualTo(AppointmentStatus.PENDING);
-        verify(notificationService).notifyRequested(any(Appointment.class));
-        verify(notificationService, times(0)).notifyConfirmed(any());
-        verify(notificationService, times(0)).notifyRefused(any());
-    }
-
-    @Test
     void acceptAppointment_confirmsAndNotifies() {
         setPrincipal(DOCTOR_EMAIL);
         User doctor = user(2L, Role.DOCTOR, DOCTOR_EMAIL);
-        when(userRepository.findByEmail(DOCTOR_EMAIL)).thenReturn(Optional.of(doctor));
+        when(userRepository.findByEmailAndStatusNot(DOCTOR_EMAIL, AccountStatus.DELETED)).thenReturn(Optional.of(doctor));
         when(doctorProfileRepository.findByUser(doctor)).thenReturn(Optional.of(doctorProfile(2L, doctor)));
         Appointment existing = appointment(1L, AppointmentStatus.PENDING, 1L, 2L);
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
@@ -156,7 +137,7 @@ class AppointmentServiceNotificationTest {
     void rejectAppointment_refusesAndNotifiesPatient() {
         setPrincipal(DOCTOR_EMAIL);
         User doctor = user(2L, Role.DOCTOR, DOCTOR_EMAIL);
-        when(userRepository.findByEmail(DOCTOR_EMAIL)).thenReturn(Optional.of(doctor));
+        when(userRepository.findByEmailAndStatusNot(DOCTOR_EMAIL, AccountStatus.DELETED)).thenReturn(Optional.of(doctor));
         when(doctorProfileRepository.findByUser(doctor)).thenReturn(Optional.of(doctorProfile(2L, doctor)));
         Appointment existing = appointment(1L, AppointmentStatus.PENDING, 1L, 2L);
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
@@ -172,7 +153,7 @@ class AppointmentServiceNotificationTest {
     void cancelAppointment_cancelsAndNotifiesWithReason() {
         setPrincipal(PATIENT_EMAIL);
         User patient = user(1L, Role.PATIENT, PATIENT_EMAIL);
-        when(userRepository.findByEmail(PATIENT_EMAIL)).thenReturn(Optional.of(patient));
+        when(userRepository.findByEmailAndStatusNot(PATIENT_EMAIL, AccountStatus.DELETED)).thenReturn(Optional.of(patient));
         when(patientProfileRepository.findByUser(patient)).thenReturn(Optional.of(patientProfile(1L, patient)));
         Appointment existing = appointment(1L, AppointmentStatus.CONFIRMED, 1L, 2L);
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
@@ -191,7 +172,8 @@ class AppointmentServiceNotificationTest {
         AppointmentNotificationService notif = mock(AppointmentNotificationService.class);
         AdminService adminService = new AdminService(patientProfileRepository, doctorProfileRepository,
                 appointmentRepository, mock(com.clinicare.repository.PrescriptionRepository.class),
-                userRepository, notif, mock(BanAppointmentCancellationService.class));
+                userRepository, notif, mock(BanAppointmentCancellationService.class),
+                mock(AccountNotificationService.class));
         Appointment existing = appointment(1L, AppointmentStatus.CONFIRMED, 1L, 2L);
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(appointmentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -200,6 +182,47 @@ class AppointmentServiceNotificationTest {
 
         assertThat(result.status()).isEqualTo(AppointmentStatus.CANCELLED);
         verify(notif).notifyCancelled(any(Appointment.class), eq("Cancelled by the clinic."));
+    }
+
+    @Test
+    void createAppointment_setsPendingAndNotifiesDoctorOnly() {
+        setPrincipal(PATIENT_EMAIL);
+        User patient = user(1L, Role.PATIENT, PATIENT_EMAIL);
+        User doctor = user(2L, Role.DOCTOR, DOCTOR_EMAIL);
+        when(validator.validate(any())).thenReturn(Collections.emptySet());
+        when(userRepository.findByEmailAndStatusNot(PATIENT_EMAIL, AccountStatus.DELETED)).thenReturn(Optional.of(patient));
+        when(patientProfileRepository.findByUser(patient)).thenReturn(Optional.of(patientProfile(1L, patient)));
+        when(doctorProfileRepository.findById(2L)).thenReturn(Optional.of(doctorProfile(2L, doctor)));
+        when(appointmentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        AppointmentRequestDTO request = new AppointmentRequestDTO(2L,
+                LocalDate.now().plusDays(1), LocalTime.NOON, "Annual check-up", null);
+
+        AppointmentResponseDTO result = service().createAppointment(request);
+
+        assertThat(result.status()).isEqualTo(AppointmentStatus.PENDING);
+        verify(notificationService).notifyRequested(any(Appointment.class));
+        verify(notificationService, times(0)).notifyConfirmed(any());
+        verify(notificationService, times(0)).notifyRefused(any());
+    }
+
+    @Test
+    void createAppointment_rejectsDeletedDoctor() {
+        setPrincipal(PATIENT_EMAIL);
+        User patient = user(1L, Role.PATIENT, PATIENT_EMAIL);
+        User doctor = user(2L, Role.DOCTOR, DOCTOR_EMAIL);
+        doctor.setStatus(AccountStatus.DELETED);
+        when(validator.validate(any())).thenReturn(Collections.emptySet());
+        when(userRepository.findByEmailAndStatusNot(PATIENT_EMAIL, AccountStatus.DELETED)).thenReturn(Optional.of(patient));
+        when(patientProfileRepository.findByUser(patient)).thenReturn(Optional.of(patientProfile(1L, patient)));
+        when(doctorProfileRepository.findById(2L)).thenReturn(Optional.of(doctorProfile(2L, doctor)));
+
+        AppointmentRequestDTO request = new AppointmentRequestDTO(2L,
+                LocalDate.now().plusDays(1), LocalTime.NOON, "Annual check-up", null);
+
+        assertThatThrownBy(() -> service().createAppointment(request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("not available");
     }
 
     @Test
@@ -213,7 +236,7 @@ class AppointmentServiceNotificationTest {
 
         setPrincipal(DOCTOR_EMAIL);
         User doctor = user(2L, Role.DOCTOR, DOCTOR_EMAIL);
-        when(userRepository.findByEmail(DOCTOR_EMAIL)).thenReturn(Optional.of(doctor));
+        when(userRepository.findByEmailAndStatusNot(DOCTOR_EMAIL, AccountStatus.DELETED)).thenReturn(Optional.of(doctor));
         when(doctorProfileRepository.findByUser(doctor)).thenReturn(Optional.of(doctorProfile(2L, doctor)));
         Appointment existing = appointment(1L, AppointmentStatus.PENDING, 1L, 2L);
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(existing));

@@ -2,6 +2,7 @@ package com.clinicare.service;
 
 import com.clinicare.dto.MedicalReportRequestDTO;
 import com.clinicare.dto.MedicalReportResponseDTO;
+import com.clinicare.entity.AccountStatus;
 import com.clinicare.entity.Appointment;
 import com.clinicare.entity.AppointmentStatus;
 import com.clinicare.entity.DoctorProfile;
@@ -157,7 +158,7 @@ public class MedicalReportService {
         } else {
             throw new BadRequestException("Unsupported authentication principal");
         }
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailAndStatusNot(email, AccountStatus.DELETED)
                 .orElseThrow(() -> new BadRequestException("Authenticated user not found"));
     }
 

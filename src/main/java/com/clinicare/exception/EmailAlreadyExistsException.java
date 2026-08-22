@@ -9,7 +9,7 @@ public class EmailAlreadyExistsException extends RuntimeException {
     private final String email;
 
     public EmailAlreadyExistsException(String email) {
-        super("Email is already registered: " + email);
+        super("Email is already registered");
         this.email = email;
     }
 

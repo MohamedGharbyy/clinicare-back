@@ -33,7 +33,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleEmailAlreadyExists(EmailAlreadyExistsException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiErrorResponse(HttpStatus.CONFLICT.value(),
-                        "Email is already registered", Map.of("email", ex.getEmail())));
+                        "Email already exists. Please use a different email address.",
+                        Map.of("email", "Email already exists. Please use a different email address.")));
     }
 
     @ExceptionHandler(BadRequestException.class)

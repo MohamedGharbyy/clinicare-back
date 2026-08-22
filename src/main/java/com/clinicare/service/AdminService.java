@@ -62,6 +62,7 @@ public class AdminService {
     private final UserRepository userRepository;
     private final AppointmentNotificationService notificationService;
     private final BanAppointmentCancellationService banCancellationService;
+    private final AccountNotificationService accountNotificationService;
 
     public AdminService(PatientProfileRepository patientProfileRepository,
                         DoctorProfileRepository doctorProfileRepository,
@@ -69,7 +70,8 @@ public class AdminService {
                         PrescriptionRepository prescriptionRepository,
                         UserRepository userRepository,
                         AppointmentNotificationService notificationService,
-                        BanAppointmentCancellationService banCancellationService) {
+                        BanAppointmentCancellationService banCancellationService,
+                        AccountNotificationService accountNotificationService) {
         this.patientProfileRepository = patientProfileRepository;
         this.doctorProfileRepository = doctorProfileRepository;
         this.appointmentRepository = appointmentRepository;
@@ -77,14 +79,15 @@ public class AdminService {
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.banCancellationService = banCancellationService;
+        this.accountNotificationService = accountNotificationService;
     }
 
     /** Aggregated counters for the dashboard summary cards. */
     @Transactional(readOnly = true)
     public AdminDashboardResponseDTO getDashboardSummary() {
         return new AdminDashboardResponseDTO(
-                patientProfileRepository.count(),
-                doctorProfileRepository.count(),
+                userRepository.countByRoleAndStatusNot(Role.PATIENT, AccountStatus.DELETED),
+                userRepository.countByRoleAndStatusNot(Role.DOCTOR, AccountStatus.DELETED),
                 appointmentRepository.count());
     }
 
@@ -92,6 +95,7 @@ public class AdminService {
     @Transactional(readOnly = true)
     public List<AdminPatientResponseDTO> listPatients() {
         return patientProfileRepository.findAll().stream()
+                .filter(patient -> patient.getUser().getStatus() != AccountStatus.DELETED)
                 .sorted(PATIENT_BY_NAME)
                 .map(AdminService::toPatientResponse)
                 .toList();
@@ -101,6 +105,7 @@ public class AdminService {
     @Transactional(readOnly = true)
     public List<AdminDoctorResponseDTO> listDoctors() {
         return doctorProfileRepository.findAll().stream()
+                .filter(doctor -> doctor.getUser().getStatus() != AccountStatus.DELETED)
                 .sorted(DOCTOR_BY_NAME)
                 .map(AdminService::toDoctorResponse)
                 .toList();
@@ -147,6 +152,12 @@ public class AdminService {
      * the active list, but their appointments, prescriptions, and medical
      * reports remain intact. Admin accounts and the acting Admin's own account
      * are protected.
+     *
+     * <p>Once the deletion is applied the former account holder is emailed at the
+     * address that was associated with the account. The notification is released
+     * only when this transaction commits, so a rejected or rolled-back deletion
+     * never sends an email, and re-deleting an account is rejected above (in
+     * {@link #requireManageable}) so the email is never duplicated.
      */
     @Transactional
     public void deleteAccount(Long userId, Long adminId) {
@@ -157,24 +168,36 @@ public class AdminService {
         user.setDeletedById(adminId);
         user.setBanExpiresAt(null);
         userRepository.save(user);
+
+        accountNotificationService.notifyAccountDeleted(user, now);
     }
 
     /** Disables an account so the user cannot log in until re-enabled. */
     @Transactional
     public AdminUserResponseDTO disableAccount(Long userId, Long adminId) {
         User user = requireManageable(userId, adminId, "disable");
+        LocalDateTime now = LocalDateTime.now();
         user.setStatus(AccountStatus.DISABLED);
         user.setBanExpiresAt(null);
-        return toUserResponse(userRepository.save(user), loadAdminEmails());
+        AdminUserResponseDTO response = toUserResponse(userRepository.save(user), loadAdminEmails());
+
+        accountNotificationService.notifyAccountDisabled(user, now);
+
+        return response;
     }
 
     /** Re-enables a disabled account. */
     @Transactional
     public AdminUserResponseDTO enableAccount(Long userId, Long adminId) {
         User user = requireManageable(userId, adminId, "enable");
+        LocalDateTime now = LocalDateTime.now();
         user.setStatus(AccountStatus.ACTIVE);
         user.setBanExpiresAt(null);
-        return toUserResponse(userRepository.save(user), loadAdminEmails());
+        AdminUserResponseDTO response = toUserResponse(userRepository.save(user), loadAdminEmails());
+
+        accountNotificationService.notifyAccountEnabled(user, now);
+
+        return response;
     }
 
     /** Temporarily bans an account for the given number of days. */
@@ -191,6 +214,8 @@ public class AdminService {
         user.setDeletedAt(null);
         user.setDeletedById(null);
         User saved = userRepository.save(user);
+
+        accountNotificationService.notifyAccountBanned(saved, banExpiresAt);
 
         // Cancel the user's future appointments that fall within the ban window and
         // notify the affected parties. Email delivery happens through the notification

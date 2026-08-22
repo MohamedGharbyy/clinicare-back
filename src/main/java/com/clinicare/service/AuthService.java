@@ -58,7 +58,7 @@ public class AuthService {
         if (request.role() == Role.ADMIN) {
             throw new BadRequestException("Role ADMIN cannot be registered via this endpoint");
         }
-        if (userRepository.existsByEmail(request.email())) {
+        if (userRepository.existsByEmailAndStatusNot(request.email(), AccountStatus.DELETED)) {
             throw new EmailAlreadyExistsException(request.email());
         }
 
@@ -99,7 +99,7 @@ public class AuthService {
 
     @Transactional
     public LoginResponseDTO login(LoginRequestDTO request) {
-        User user = userRepository.findByEmail(request.email())
+        User user = userRepository.findByEmailAndStatusNot(request.email(), AccountStatus.DELETED)
                 .orElseThrow(InvalidCredentialsException::new);
 
         if (user.reconcileBan()) {
